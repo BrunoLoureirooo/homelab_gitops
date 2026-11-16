@@ -29,23 +29,22 @@ uses them until a Talos node is on the tailnet.
    both). Add one grant: `tag:ci` may reach `tag:talos` on ports 50000 and 6443
    only. Add no rule that lets `tag:ci` reach any other device. Tag both Talos
    nodes `tag:talos` (the Tailscale extension config, plan 15-02).
-2. **CI identity.** Prefer a federated identity for GitHub OIDC, scoped to the
-   `auth_keys` write permission with tag `tag:ci`. If your plan does not offer
-   federation, create an OAuth client with the same scope and tag. Note the
-   client id: it is not a secret.
+2. **CI identity.** Create a federated identity for GitHub OIDC (issuer
+   GitHub, subject `repo:BrunoLoureirooo/homelab_gitops:environment:*`), scoped
+   to the `auth_keys` write permission with tag `tag:ci`. Note the client id and
+   audience: neither is a secret. Full steps: `.github/SECRETS.md`.
 3. **GitHub environments** (repository Settings, Environments): create
    `talos-check` (no reviewer) and `talos-apply` (required reviewer: you,
    restricted to branch `main`). Add the secret `SOPS_AGE_KEY` to both (the age
    private key that decrypts `talos/secrets/`; keep your own offline copy).
-   OAuth route only: also the secret `TS_OAUTH_SECRET`.
+   There is no Tailscale secret.
 4. **Repository variables:** `TALOS_NODES` (space separated `name=endpoint`
    pairs, control plane first, MagicDNS short names, for example
-   `mini01=<short-name> mini02=<short-name>`), `TS_CLIENT_ID` (the client id
-   from step 2), `TS_AUDIENCE` (OIDC route only: the audience the Tailscale
-   console shows; leave it unset on the OAuth route) and `TALOS_PING_HOST` (a
-   Talos node's short name, set after the node exists; the workflow pings it
-   before doing anything).
-5. Reply in the PR with: federated or OAuth, the environment names created and
+   `mini01=<short-name> mini02=<short-name>`), `TS_CLIENT_ID` and `TS_AUDIENCE`
+   (the client id and audience from step 2) and `TALOS_PING_HOST` (a Talos
+   node's short name, set after the node exists; the workflow pings it before
+   doing anything). The workflow fails fast, naming any that is missing.
+5. Reply in the PR with: the environment names created and
    the secret names set. Never paste a value.
 
 Secret names only are written anywhere in this repo. Values never are.
