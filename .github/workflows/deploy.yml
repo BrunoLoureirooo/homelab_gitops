@@ -49,6 +49,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: victus # holds victus's own ANSIBLE_BECOME_PASSWORD
+    permissions:
+      contents: read
+      id-token: write # Tailscale workload identity federation
     defaults:
       run:
         working-directory: ansible
@@ -60,6 +63,22 @@ jobs:
         --vault-password-file=${{ github.workspace }}/.github/scripts/ansible-vault-pass.sh
         --become-password-file=${{ github.workspace }}/.github/scripts/ansible-become-pass.sh
     steps:
+      # Names only are checked; a value is never printed.
+      - name: Require the configured variables and secrets
+        env:
+          TS_CLIENT_ID: ${{ vars.TS_CLIENT_ID }}
+          TS_AUDIENCE: ${{ vars.TS_AUDIENCE }}
+          CI_DEPLOY_SSH_KEY: ${{ secrets.CI_DEPLOY_SSH_KEY }}
+        run: |
+          missing=0
+          for name in TS_CLIENT_ID TS_AUDIENCE ANSIBLE_VAULT_PASSWORD CI_DEPLOY_SSH_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::required variable or secret $name is not set (see .github/SECRETS.md)"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # ping makes the action fail fast if a host is unreachable. It takes MagicDNS names,
@@ -67,8 +86,8 @@ jobs:
       - name: Join the tailnet
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          oauth-client-id: ${{ vars.TS_CLIENT_ID }}
+          audience: ${{ vars.TS_AUDIENCE }}
           tags: tag:ci
           ping: victus
 
@@ -120,6 +139,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: mini04
+    permissions:
+      contents: read
+      id-token: write # Tailscale workload identity federation
     concurrency:
       group: deploy-mini04
       cancel-in-progress: false
@@ -133,12 +155,21 @@ jobs:
       ANSIBLE_ARGS: >-
         --vault-password-file=${{ github.workspace }}/.github/scripts/ansible-vault-pass.sh
     steps:
-      - name: Require MINI04_USER
+      # Names only are checked; a value is never printed.
+      - name: Require the configured variables and secrets
+        env:
+          TS_CLIENT_ID: ${{ vars.TS_CLIENT_ID }}
+          TS_AUDIENCE: ${{ vars.TS_AUDIENCE }}
+          CI_DEPLOY_SSH_KEY: ${{ secrets.CI_DEPLOY_SSH_KEY }}
         run: |
-          if [ -z "$MINI04_USER" ]; then
-            echo "repo variable MINI04_USER is not set" >&2
-            exit 1
-          fi
+          missing=0
+          for name in TS_CLIENT_ID TS_AUDIENCE ANSIBLE_VAULT_PASSWORD CI_DEPLOY_SSH_KEY MINI04_USER; do
+            if [ -z "${!name}" ]; then
+              echo "::error::required variable or secret $name is not set (see .github/SECRETS.md)"
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -147,8 +178,8 @@ jobs:
       - name: Join the tailnet
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          oauth-client-id: ${{ vars.TS_CLIENT_ID }}
+          audience: ${{ vars.TS_AUDIENCE }}
           tags: tag:ci
           ping: mini04
 

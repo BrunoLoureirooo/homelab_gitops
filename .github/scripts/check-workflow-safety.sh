@@ -9,7 +9,8 @@
 #      pinned by full commit SHA, no secrets other than GITHUB_TOKEN
 #   D  upload-artifact paths are limited to serial*.log and *report*.txt/md
 #   F  (plan 15-08) the Talos deploy path: `id-token: write` exists only in
-#      talos-deploy.yaml; talos-deploy*.yaml has no pull_request or
+#      talos-deploy.yaml (top level) and as job-level permissions in deploy.yml
+#      (Tailscale OIDC; never top level there); talos-deploy*.yaml has no pull_request or
 #      pull_request_target trigger and no self-hosted label, pins every
 #      action by commit SHA, and holds exactly contents: read and
 #      id-token: write (top level only, no job-level permissions)
@@ -81,6 +82,31 @@ jobs:
     permissions:
       contents: read}"
   expect job-level-permissions fail
+  deploy_job='name: Deploy
+on: [workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  j:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - run: echo hi
+'
+  plant deploy-job-level "$good" "$deploy_job"
+  mv "$tmp/deploy-job-level/.github/workflows/other.yaml" "$tmp/deploy-job-level/.github/workflows/deploy.yml"
+  expect deploy-job-level pass
+  plant deploy-top-level "$good" "${deploy_job/permissions:
+  contents: read/permissions:
+  contents: read
+  id-token: write}"
+  mv "$tmp/deploy-top-level/.github/workflows/other.yaml" "$tmp/deploy-top-level/.github/workflows/deploy.yml"
+  expect deploy-top-level fail
+  plant other-job-level "$good" "$deploy_job"
+  expect other-job-level fail
   if ((fails)); then
     echo "self-test: $fails failure(s)"
     exit 1
@@ -125,10 +151,16 @@ done
 # Rule F: the Talos deploy path (plan 15-08).
 for f in "${all[@]}"; do
   base="$(basename "$f")"
-  # (i) `id-token: write` (top level or any job) only in talos-deploy.yaml.
+  # (i) `id-token: write` only in talos-deploy.yaml, plus job-level (never top
+  # level) in deploy.yml, whose jobs join the tailnet by OIDC.
   idt="$(yq -r '[.permissions, (.jobs[].permissions)] | map(select(tag == "!!map") | ."id-token") | map(select(. == "write")) | length' "$f" 2>/dev/null || echo 0)"
-  if [[ "${idt:-0}" != 0 && "$base" != "talos-deploy.yaml" ]]; then
-    violation F "$f" "id-token: write outside talos-deploy.yaml"
+  idtop="$(yq -r '[.permissions] | map(select(tag == "!!map") | ."id-token") | map(select(. == "write")) | length' "$f" 2>/dev/null || echo 0)"
+  if [[ "$base" == "deploy.yml" ]]; then
+    if [[ "${idtop:-0}" != 0 ]]; then
+      violation F "$f" "id-token: write at top level of deploy.yml (job level only)"
+    fi
+  elif [[ "${idt:-0}" != 0 && "$base" != "talos-deploy.yaml" ]]; then
+    violation F "$f" "id-token: write outside talos-deploy.yaml and deploy.yml"
   fi
   [[ "$base" == talos-deploy* ]] || continue
   # (ii) never reachable from a pull request, never self-hosted.
