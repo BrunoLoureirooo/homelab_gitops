@@ -69,12 +69,10 @@ api -X PUT "repos/$REPO/actions/permissions/selected-actions" --input - <<'JSON'
   ]
 }
 JSON
-# Require full-SHA pinning. The REST docs list sha_pinning_required on
-# PUT /repos/{repo}/actions/permissions, but it makes every workflow with a tag-pinned
-# `uses:` fail (validate.yaml and lint.yaml are still tag-pinned). Enable it only after those
-# are pinned to 40-char SHAs, by uncommenting:
-# api -X PUT "repos/$REPO/actions/permissions" -F enabled=true -f allowed_actions=selected \
-#   -F sha_pinning_required=true
+# Require full-SHA pinning (PUT /repos/{repo}/actions/permissions). All workflow `uses:` are
+# pinned to 40-char SHAs, so this is safe to enable.
+api -X PUT "repos/$REPO/actions/permissions" -F enabled=true -f allowed_actions=selected \
+  -F sha_pinning_required=true
 
 # ---------------------------------------------------------------------------------------------
 step "d. Ruleset main-protection on the default branch"
