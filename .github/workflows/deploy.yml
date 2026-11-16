@@ -71,7 +71,7 @@ jobs:
           CI_DEPLOY_SSH_KEY: ${{ secrets.CI_DEPLOY_SSH_KEY }}
         run: |
           missing=0
-          for name in TS_CLIENT_ID TS_AUDIENCE ANSIBLE_VAULT_PASSWORD CI_DEPLOY_SSH_KEY; do
+          for name in TS_CLIENT_ID TS_AUDIENCE ANSIBLE_VAULT_PASSWORD ANSIBLE_BECOME_PASSWORD CI_DEPLOY_SSH_KEY; do
             if [ -z "${!name}" ]; then
               echo "::error::required variable or secret $name is not set (see .github/SECRETS.md)"
               missing=1
