@@ -1,0 +1,45 @@
+# node-exporter on every node, including cordoned mini02 and the tainted mini03 (plan 4.6). Needs hostPID and
+# hostPath, which is why the monitoring namespace is `privileged`. No hostNetwork: the port is not exposed on a node
+# address. UNVERIFIED on Talos until synced: that filesystem and ZFS metrics read correctly (see the PR checklist).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: node-exporter, namespace: monitoring, labels: {app.kubernetes.io/name: node-exporter}}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: node-exporter}}
+  updateStrategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 1}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: node-exporter}}
+    spec:
+      hostPID: true
+      priorityClassName: hs-critical
+      tolerations: [{operator: Exists}]
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: node-exporter
+          image: quay.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+          args:
+            - --path.procfs=/host/proc
+            - --path.sysfs=/host/sys
+            - --path.rootfs=/host/root
+            - --web.listen-address=:9100
+            - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/kubelet/pods|var/lib/containerd|var/run|etc/cni|etc/kubernetes|usr/libexec)($|/)
+            - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|tmpfs)$
+            - --no-collector.wifi
+            - --no-collector.infiniband
+            - --no-collector.nfs
+            - --no-collector.nfsd
+            - --no-collector.fibrechannel
+            - --no-collector.bcache
+          ports: [{name: metrics, containerPort: 9100}]
+          readinessProbe: {httpGet: {path: /, port: metrics}, periodSeconds: 15}
+          resources: {requests: {cpu: 20m, memory: 24Mi}, limits: {cpu: 200m, memory: 64Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: proc, mountPath: /host/proc, readOnly: true}
+            - {name: sys, mountPath: /host/sys, readOnly: true}
+            - {name: root, mountPath: /host/root, readOnly: true, mountPropagation: HostToContainer}
+      volumes:
+        - {name: proc, hostPath: {path: /proc}}
+        - {name: sys, hostPath: {path: /sys}}
+        - {name: root, hostPath: {path: /}}

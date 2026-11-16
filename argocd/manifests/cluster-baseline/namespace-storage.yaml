@@ -1,0 +1,14 @@
+# Verbatim from ~/namespaceStorage.yaml on mini01 (fetched live via SSH,
+# applied by hand originally) - see argocd/apps/cluster-baseline.yaml.
+apiVersion: v1
+kind: Namespace
+metadata: { name: homeserver }
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: { name: topolvm-fast }
+provisioner: topolvm.io
+parameters: { "topolvm.io/device-class": "fast" }
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain

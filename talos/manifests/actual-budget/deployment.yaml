@@ -1,0 +1,89 @@
+# Actual Budget (actual-server) on mini01. One replica, Recreate: the data is SQLite on a RWO volume,
+# never scale it. Pinned by digest; the tag stays in the comment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actual-budget
+  labels:
+    app.kubernetes.io/name: actual-budget
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actual-budget
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: actual-budget
+      annotations:
+        # Velero opt-in: back up the pod volume named `data` with file-system backup (kopia).
+        backup.velero.io/backup-volumes: data
+    spec:
+      # Actual does not use the Kubernetes API: no token is mounted into the pod.
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: mini01
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: actual-budget
+          image: ghcr.io/actualbudget/actual-server@sha256:24645e971da6bb1a1f953d6859e307a0b29be1e8b4130a35b3220c209b5b860c # 26.10.0
+          ports:
+            - name: http
+              containerPort: 5006
+          # No Secret yet: the server password is set in the browser. The OIDC step (docs/plans/actual-budget.md
+          # WP5) adds the sealed Secret actual-budget-secrets; `optional: true` lets the pod start without it.
+          envFrom:
+            - secretRef:
+                name: actual-budget-secrets
+                optional: true
+          env:
+            - name: ACTUAL_DATA_DIR
+              value: /data
+            - name: ACTUAL_PORT
+              value: "5006"
+          # Explicit limits: without them the homeserver LimitRange injects a 500m cpu default.
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          # readOnlyRootFilesystem is not set: Node, the server and its migrations may write outside
+          # /data (unverified). Try it in a later PR once the pod is healthy.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: actual-budget-data

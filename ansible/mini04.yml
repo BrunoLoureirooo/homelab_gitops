@@ -1,0 +1,19 @@
+---
+# Standalone host-config playbook for mini04: a Debian 13 display host that
+# shows a Grafana dashboard on a screen (cage + Chromium kiosk, roles/kiosk).
+# It is not a cluster node (inventory.yml's `standalone` group). Takes it from a
+# plain Debian install (with SSH + sudo already working, see
+# roles/kiosk/README.md "Day 0") to its target host state. Every task is
+# idempotent.
+#
+#   ansible-playbook mini04.yml --check --diff --ask-become-pass --ask-vault-pass
+#   ansible-playbook mini04.yml --ask-become-pass --ask-vault-pass
+#
+# Until mini04 has joined the tailnet, add `-e ansible_host=<lan-ip>` to both.
+# Touches only mini04.
+- name: Provision mini04 (universal host config + kiosk display)
+  hosts: mini04
+  become: true
+  roles:
+    - role: host_config
+    - role: kiosk

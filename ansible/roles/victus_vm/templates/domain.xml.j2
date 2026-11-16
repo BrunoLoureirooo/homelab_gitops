@@ -1,0 +1,89 @@
+<!-- Managed by Ansible (roles/victus_vm). A change here is applied by `virsh define`
+     and takes effect the next time the VM is stopped and started. -->
+<domain type='kvm'>
+  <name>{{ victus_vm_name }}</name>
+  <memory unit='MiB'>{{ victus_vm_memory_mib }}</memory>
+  <currentMemory unit='MiB'>{{ victus_vm_memory_mib }}</currentMemory>
+  <vcpu placement='static'>{{ victus_vm_vcpus }}</vcpu>
+  <os firmware='efi'>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <firmware>
+      <feature enabled='no' name='enrolled-keys'/>
+      <feature enabled='no' name='secure-boot'/>
+    </firmware>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <cpu mode='host-passthrough' check='none'/>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>restart</on_crash>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+{% for d in [
+  {'lv': 'mini03-os', 'dev': 'vda', 'boot': true},
+  {'lv': 'mini03-backups', 'dev': 'vdb', 'boot': false},
+  {'lv': 'mini03-staging', 'dev': 'vdc', 'boot': false}] %}
+    <disk type='block' device='disk'>
+      <driver name='qemu' type='raw' cache='none' io='native' discard='unmap'/>
+      <source dev='/dev/{{ victus_vm_vg }}/{{ d.lv }}'/>
+      <target dev='{{ d.dev }}' bus='virtio'/>
+      <serial>{{ d.lv }}</serial>
+{% if d.boot %}
+      <boot order='1'/>
+{% endif %}
+    </disk>
+{% endfor %}
+{% if victus_vm_install_iso | length > 0 %}
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='{{ victus_vm_install_iso }}'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+      <boot order='2'/>
+    </disk>
+{% endif %}
+{% if victus_vm_network_mode == 'direct' %}
+    <interface type='direct'>
+      <mac address='{{ victus_vm_mac }}'/>
+      <source dev='{{ victus_vm_nic }}' mode='bridge'/>
+      <model type='virtio'/>
+    </interface>
+{% elif victus_vm_network_mode == 'bridge' %}
+    <interface type='bridge'>
+      <mac address='{{ victus_vm_mac }}'/>
+      <source bridge='{{ victus_vm_bridge }}'/>
+      <model type='virtio'/>
+    </interface>
+{% else %}
+    <interface type='network'>
+      <source network='default'/>
+      <model type='virtio'/>
+    </interface>
+{% endif %}
+    <serial type='pty'>
+      <target type='isa-serial' port='0'/>
+    </serial>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
+{% if victus_vm_display | bool %}
+    <graphics type='vnc' port='{{ victus_vm_display_port }}' autoport='no' listen='127.0.0.1'>
+      <listen type='address' address='127.0.0.1'/>
+    </graphics>
+    <video>
+      <model type='vga' vram='16384' heads='1' primary='yes'/>
+    </video>
+{% endif %}
+    <memballoon model='virtio'/>
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+  </devices>
+</domain>

@@ -1,0 +1,31 @@
+# Talos-only SealedSecrets (plan 15-06 Task 6; sealed 2026-10-17 against the live cluster's controller).
+# Every file listed under `resources` is committed here; only `kind: SealedSecret` objects may live in
+# this directory (check-backups-06.sh enforces it). See docs/dr/talos-backups.md, "Sealing the credentials".
+#   litestream-s3.yaml          homeserver/litestream-s3         access-key-id, secret-access-key  (MinIO user litestream)
+#   immich-pg-s3.yaml           homeserver/immich-pg-s3          ACCESS_KEY_ID, ACCESS_SECRET_KEY  (MinIO user immich-pg)
+#   velero-cloud-credentials.yaml  velero/cloud-credentials      cloud      (Velero credentials file, MinIO user velero)
+#   minio-root.yaml             velero/minio-root                MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (the MinIO root pair)
+#   samba-nas-credentials.yaml  nas/samba-nas-credentials        credential   (the Samba account password)
+#   smb-csi-credentials.yaml    nas/smb-csi-credentials          username, password (csi-driver-smb mounts)
+#   adguard-admin.yaml          adguard/adguard-admin            password, bcrypt-hash (AdGuard Home admin; password is the login)
+#   minio-replica-root.yaml     velero/minio-replica-root        MINIO_ROOT_USER, MINIO_ROOT_PASSWORD (root pair of the replica MinIO on mini03; sealed 2026-11-05 against the live controller)
+#   grafana-secrets.yaml        monitoring/grafana-secrets       GF_SECURITY_ADMIN_PASSWORD (Grafana admin login; random, sealed 2026-11-06 against the live controller; read it back from the cluster when needed)
+#   prometheus-external-url.yaml  monitoring/prometheus-external-url  url (Prometheus external URL)
+# The sealed Secrets that replace a Secret created by hand carry the managed annotation, and the
+# existing Secret was annotated `sealedsecrets.bitnami.com/managed=true` first so the controller adopts it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - samba-nas-credentials.yaml
+  - smb-csi-credentials.yaml
+  - litestream-s3.yaml
+  - immich-pg-s3.yaml
+  - velero-cloud-credentials.yaml
+  - minio-root.yaml
+  - adguard-admin.yaml
+  - minio-replica-root.yaml
+  - backup-replica-mirror.yaml
+  - grafana-secrets.yaml
+  - alertmanager-notifiers.yaml
+  - cp-reserva-bot-schedule.yaml
+  - prometheus-external-url.yaml

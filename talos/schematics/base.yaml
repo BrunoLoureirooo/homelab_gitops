@@ -1,0 +1,3 @@
+# Vanilla Talos: no extensions. Used by the CI harness (plan 15-01). Hardware
+# extensions live in the per-node schematics beside this file.
+customization: {}

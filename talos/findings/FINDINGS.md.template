@@ -1,0 +1,71 @@
+# Talos findings and the G1 decision
+
+Copy this file to `talos/FINDINGS.md` (the plans, the storage-bind job and the
+cutover runbook read that path) and fill it from the first full run.
+
+Status: SCAFFOLD. Nothing below is a measurement yet: the branch was written
+without CI, `talos/PINS-PENDING` still exists, and every VM job is UNRUN. After the pins are refreshed and a full run
+(`workflow_dispatch` with `extended`, or the `talos-full` label), evaluate the run:
+
+    bash talos/findings/run-g1.sh <run-id>
+
+then replace the `pending` values below with the measured ones, commit the run's
+`findings.txt` as `talos/findings/last-run-findings.txt`, and let the operator set the
+decision line at the end of this file. Plans 15-05 to 15-09 do not start before
+`G1 DECISION: go`.
+
+## Storage
+
+Machine-read lines (plan 15-03 reads them; the storage-bind job refuses to run
+while STORAGE_VERDICT is not `local-path` or `topolvm`, and while it disagrees
+with `storage:` in `apps-overrides.yaml`):
+
+STORAGE_VERDICT=pending
+DATA_PATH=pending
+
+Design already built for both outcomes (plan 15-03 task 3):
+
+- `local-path` (the expected outcome: no official LVM extension, and TopoLVM on
+  Talos is not attempted by CI): the generated cluster-baseline copy defines the
+  StorageClass **`topolvm-fast` with provisioner `rancher.io/local-path`**, and the
+  local-path-provisioner app stores volumes under `/var/mnt/data/local-path`. Every
+  PVC, Helm value and Velero backup keeps its class name, so the Velero restore in
+  plan 15-06 is a plain restore: `STORAGE_CLASS_MAP=none`.
+- `topolvm`: `storage: topolvm` in `apps-overrides.yaml` re-includes the topolvm app
+  and leaves the StorageClass as in `argocd/manifests/cluster-baseline`.
+
+Accepted change with `local-path`: it does not enforce the 64Gi/8Gi/1Gi/100Mi sizes
+(TopoLVM did), so a runaway pod can fill the data volume. Mitigation, owned by plan
+15-06: a namespace quota and a disk-usage alert.
+
+## Platform
+
+CNI=flannel
+PROXYCLASS_MTU_OK=pending
+
+`CNI=flannel` is the DECISION (Talos's default; nothing in the repo uses network
+policies; Cilium would only add RAM and moving parts), not a measurement. The
+expectation to confirm: flannel's VXLAN on a 1500-byte LAN gives a pod MTU of about
+1450, and the ProxyClass tunnel MTU 1150 plus about 80 bytes of overhead = 1230
+fits, so the existing ProxyClass stays valid. The `cni-mtu` job measures the pod MTU
+and prints `CNI flannel POD_MTU=... PROXYCLASS_MTU_OK=yes|no`; if `no`, add a Talos
+override (an extra valueFile under `talos/values/`), never an edit in `argocd/`.
+
+Metrics: metrics-server runs with `--kubelet-insecure-tls` (the documented fallback
+for self-signed Talos kubelet certificates). Follow-up, not built: rotate kubelet
+serving certificates and add a certificate approver (one more pinned component).
+
+## Empty-cluster order
+
+The ratchet `test/empty-cluster-expectations.txt` is PREDICTED. The first green
+`empty-cluster` run replaces it with the observed states; record here the run id of
+the deliberately broken control run (remove the CNPG step from the script, expect
+`RATCHET immich-infra`): run id pending.
+
+## G1 verdict table
+
+Pending the first full run. `talos/findings/run-g1.sh` prints one `G1-ROW` per
+criteria row, the consequences of every non-PASS should row, and
+`G1=go|no-go|incomplete`.
+
+G1 DECISION: PENDING

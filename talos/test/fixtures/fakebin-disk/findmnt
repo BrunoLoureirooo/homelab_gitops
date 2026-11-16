@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Test stand-in for `findmnt -no SOURCE --target <path>`. The mapping comes from
+# the file named in FAKE_MOUNT_MAP, one `prefix device` pair per line; the longest
+# matching prefix wins.
+set -euo pipefail
+target=""
+while (($#)); do
+  case "$1" in
+    --target)
+      target="$2"
+      shift 2
+      ;;
+    *) shift ;;
+  esac
+done
+best=""
+bestlen=0
+dev=""
+while read -r prefix device; do
+  [[ -n "$prefix" ]] || continue
+  case "$target/" in
+    "$prefix"/* | "$prefix"//*)
+      if ((${#prefix} > bestlen)); then
+        best="$prefix"
+        bestlen=${#prefix}
+        dev="$device"
+      fi
+      ;;
+  esac
+  if [[ "$prefix" == "/" && -z "$best" ]]; then
+    dev="$device"
+    best="/"
+  fi
+done <"$FAKE_MOUNT_MAP"
+echo "$dev"

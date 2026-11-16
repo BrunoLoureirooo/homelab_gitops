@@ -1,0 +1,39 @@
+---
+# Offline test of the decision that keeps roles/victus_vm from touching the wrong disk.
+# It never reads a real disk: each scenario hands the role's state logic the outputs of
+# wipefs, lsblk, blkid, pvs and lvs and checks the verdict. The destructive tasks only run for
+# `blank` and `resumable`; every other verdict must be `unexpected` or `provisioned`.
+#
+#   cd ansible && ansible-playbook -i localhost, -c local tests/victus_vm_disk_state.yml
+- name: The 512 disk role only builds on a blank or half-built disk
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars_files:
+    - ../roles/victus_vm/defaults/main.yml
+  vars:
+    all_lvs: [mini03-os, mini03-backups, mini03-staging]
+    cases:
+      - { name: blank disk, want: blank, sigs: "", nparts: 0, fs: "", psigs: 0, vg: "", lvs: [] }
+      - { name: finished disk, want: provisioned, sigs: "0x00000200 gpt", nparts: 1, fs: LVM2_member, psigs: 1, vg: victus512, lvs: "{{ all_lvs }}" }
+      - { name: empty partition (interrupted before pvcreate), want: resumable, sigs: "0x00000200 gpt", nparts: 1, fs: "", psigs: 0, vg: "", lvs: [] }
+      - { name: PV made, no VG yet, want: resumable, sigs: "0x00000200 gpt", nparts: 1, fs: LVM2_member, psigs: 1, vg: "", lvs: [] }
+      - { name: VG made, one LV missing, want: resumable,
+          sigs: "0x00000200 gpt", nparts: 1, fs: LVM2_member, psigs: 1, vg: victus512, lvs: [mini03-os, mini03-backups] }
+      - { name: the old Debian disk (vg0 on a partition), want: unexpected, sigs: "0x00000200 gpt", nparts: 3, fs: vfat, psigs: 1, vg: "", lvs: [] }
+      - { name: someone else's volume group on partition 1, want: unexpected,
+          sigs: "0x00000200 gpt", nparts: 1, fs: LVM2_member, psigs: 1, vg: vg0, lvs: [root, home] }
+      - { name: our VG but a foreign extra LV, want: unexpected,
+          sigs: "0x00000200 gpt", nparts: 1, fs: LVM2_member, psigs: 1, vg: victus512, lvs: "{{ all_lvs + ['extra'] }}" }
+      - { name: a filesystem on partition 1, want: unexpected, sigs: "0x00000200 gpt", nparts: 1, fs: ext4, psigs: 1, vg: "", lvs: [] }
+      - { name: a stray filesystem on the whole disk, no partitions, want: unexpected, sigs: "0x438 ext4", nparts: 0, fs: "", psigs: 0, vg: "", lvs: [] }
+      - { name: partition 1 holds an unrecognised signature, want: unexpected, sigs: "0x00000200 gpt", nparts: 1, fs: "", psigs: 1, vg: "", lvs: [] }
+      - { name: an extra second partition on a finished disk, want: unexpected,
+          sigs: "0x00000200 gpt", nparts: 2, fs: LVM2_member, psigs: 1, vg: victus512, lvs: "{{ all_lvs }}" }
+  tasks:
+    - name: Run every scenario
+      ansible.builtin.include_tasks: victus_vm_disk_state_case.yml
+      loop: "{{ cases }}"
+      loop_control:
+        loop_var: case
+        label: "{{ case.name }}"

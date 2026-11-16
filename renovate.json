@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "kubernetes": {
+    "fileMatch": ["argocd/.+\\.ya?ml$"]
+  },
+  "helm-values": {
+    "fileMatch": ["argocd/values/.+\\.ya?ml$"]
+  },
+  "schedule": ["before 10am on wednesday"],
+  "timezone": "Europe/Lisbon",
+  "labels": ["dependencies"]
+}

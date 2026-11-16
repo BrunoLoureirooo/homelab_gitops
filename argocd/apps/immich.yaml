@@ -1,0 +1,46 @@
+# Built 2026-09-25 from ~/immich/immich-values.yaml on mini01 (fetched live
+# via SSH, not guessed - see argocd/README.md Section 4/10). Pair with
+# apps/immich-infra.yaml (the CNPG Cluster, PVC, and Ingress this chart
+# doesn't manage itself).
+#
+# Chart version confirmed live 2026-09-26: `helm list -A` shows
+# immich-0.13.1 (app v3.0.0) installed in homeserver.
+#
+# The chart comes from GitHub's OCI registry, NOT the old GitHub Pages repo
+# (https://immich-app.github.io/immich-charts): that repo stops at 0.12.0,
+# and 0.13.x is only published as oci://ghcr.io/immich-app/immich-charts/immich
+# (confirmed with `helm show chart`). ArgoCD reaches it through the
+# `immich-charts` repository (type helm, enableOCI) that argocd_bootstrap
+# registers - which is also why repoURL below has no oci:// prefix.
+#
+# argocd/values/immich.yaml IS the real captured values file, byte-for-byte.
+# Per Section 3 (adopt, never recreate) and Section 4 (audit first): run
+# `helm get values -a immich -n homeserver` to confirm nothing's drifted, and
+# only sync once `argocd app diff immich` shows nothing but ArgoCD's own
+# tracking labels. Phase 3 per Section 6 - migrate after Velero/MinIO and the
+# cluster-baseline objects are proven, before Vaultwarden.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: immich
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: ghcr.io/immich-app/immich-charts
+      chart: immich
+      targetRevision: "0.13.1" # matches the live release (helm list -A, 2026-09-26)
+      helm:
+        valueFiles:
+          - $values/argocd/values/immich.yaml
+    - repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homeserver
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    # Manual sync, no automated block - same stance as every other app here,
+    # and doubly so for Immich (Phase 3: real, irreplaceable photo data).

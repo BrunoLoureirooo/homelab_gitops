@@ -1,0 +1,16 @@
+# Jellyfin's configuration and library database. The class is named explicitly: the cluster has
+# no default StorageClass (topolvm-fast is the local-path-backed class every claim names), and a
+# claim without a class stays Pending forever. It is small, and the daily Velero schedule covers
+# the homeserver namespace.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-config
+  labels:
+    app.kubernetes.io/name: jellyfin
+spec:
+  storageClassName: topolvm-fast
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi

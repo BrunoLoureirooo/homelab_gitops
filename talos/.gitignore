@@ -1,0 +1,13 @@
+# Rendered output and run-time material never go to git.
+out/
+.cache/
+local/
+versions.env.proposed
+secrets.yaml
+talosconfig
+kubeconfig
+controlplane.yaml
+worker.yaml
+# ... except the role patches, which are inputs, not rendered output.
+!patches/controlplane.yaml
+!patches/worker.yaml

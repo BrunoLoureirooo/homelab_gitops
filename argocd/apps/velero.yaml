@@ -1,0 +1,34 @@
+# Chart version confirmed live 2026-09-26: `helm list -A` shows
+# velero-12.1.0 (app 1.18.1) installed in the velero namespace. Everything
+# else here and in argocd/values/velero.yaml was reconciled 2026-09-25
+# against ~/velero/veleroValues.yaml (the values file actually `helm upgrade
+# --install`'d on mini01, fetched live via SSH - not guessed): the plugin
+# image tag (v1.13.1), resources, backupStorageLocation, and the schedule.
+# Per Section 3 (adopt, never recreate) and Section 4 (audit first), only
+# sync once `argocd app diff velero` shows nothing but ArgoCD's own tracking
+# labels. Velero's backup data lives in MinIO, not in this app's own state,
+# but a bad sync could still disrupt the running backup schedule.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://vmware-tanzu.github.io/helm-charts
+      chart: velero
+      targetRevision: "12.1.0" # matches the live release (helm list -A, 2026-09-26)
+      helm:
+        valueFiles:
+          - $values/argocd/values/velero.yaml
+    - repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    # Manual sync, no automated block - same stance as minio.yaml above.

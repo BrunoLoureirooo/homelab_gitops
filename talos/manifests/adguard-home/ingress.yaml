@@ -1,0 +1,22 @@
+# The web UI on the tailnet only, under the device name `adguard-ui` (the DNS Service already
+# takes `adguard`). The hostname comes from tls.hosts, like the immich and vaultwarden Ingresses.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: adguard-ui
+  namespace: adguard
+spec:
+  ingressClassName: tailscale
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: adguard-web
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - adguard-ui

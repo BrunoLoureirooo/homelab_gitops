@@ -1,0 +1,25 @@
+# CloudNativePG operator 1.25.0, upstream release manifest, unmodified (plan 15-06 Task 4).
+#
+# A remote kustomize base cannot be hash-checked. If Argo CD's repo-server cannot fetch it,
+# or you want the bytes pinned in git, vendor the file instead:
+#   curl -fsSLo talos/manifests/cnpg-operator/cnpg-1.25.0.yaml \
+#     https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.25.0/cnpg-1.25.0.yaml
+#   sha256sum talos/manifests/cnpg-operator/cnpg-1.25.0.yaml   # record it in docs/dr/talos-backups.md
+# and replace the resource below with `cnpg-1.25.0.yaml`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.25.0/cnpg-1.25.0.yaml
+# The upstream manifest ships Namespace/cnpg-system, but the `namespaces` app already owns it
+# (talos/manifests/namespaces). Two apps claiming one Namespace leave cnpg-operator permanently
+# OutOfSync (SharedResourceWarning), so drop it here.
+patches:
+  - target:
+      kind: Namespace
+      name: cnpg-system
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: cnpg-system

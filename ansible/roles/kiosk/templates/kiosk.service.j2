@@ -1,0 +1,44 @@
+# {{ ansible_managed }}
+# cage + Chromium kiosk on {{ kiosk_tty }}. Based on the cage project's
+# "Starting Cage on boot with systemd" wiki page.
+[Unit]
+Description=Kiosk display (cage + Chromium) on {{ kiosk_tty }}
+# Start after logins are permitted, before the graphical target completes.
+After=systemd-user-sessions.service plymouth-quit-wait.service
+Before=graphical.target
+# Do nothing on systems without virtual consoles.
+ConditionPathExists=/dev/tty0
+# logind (via D-Bus) is required by wlroots.
+Wants=dbus.socket systemd-logind.service
+After=dbus.socket systemd-logind.service
+# Replace the getty on this tty: the kiosk logs in automatically.
+Conflicts=getty@{{ kiosk_tty }}.service
+After=getty@{{ kiosk_tty }}.service
+
+[Service]
+Type=simple
+User={{ kiosk_user }}
+# wlroots aborts when no input device is present; allow a display-only box.
+Environment=WLR_LIBINPUT_NO_DEVICES=1
+# Clear Chromium's crashed-session flag so a power cut never shows the
+# "Restore pages?" bubble. Leading "-": no profile yet on first start is fine.
+ExecStartPre=-/usr/bin/sed -i -e 's/"exited_cleanly":false/"exited_cleanly":true/' -e 's/"exit_type":"Crashed"/"exit_type":"Normal"/' {{ kiosk_home }}/.config/chromium/Default/Preferences
+ExecStart=/usr/bin/cage -s -- /usr/bin/chromium {{ kiosk_chromium_flags | join(' ') }} "{{ kiosk_url | replace('%', '%%') | replace('$', '$$') }}"
+# Switch to the kiosk's tty (runs as root: "+").
+ExecStartPost=-+/usr/bin/chvt {{ kiosk_tty | regex_replace('^tty', '') }}
+Restart=always
+RestartSec={{ kiosk_restart_sec }}
+# Log the user with utmp, since this replaces getty.
+UtmpIdentifier={{ kiosk_tty }}
+UtmpMode=user
+TTYPath=/dev/{{ kiosk_tty }}
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+# Fail to start rather than run without owning the tty.
+StandardInput=tty-fail
+# Full user session (logind seat, XDG_RUNTIME_DIR), required by cage.
+PAMName=kiosk
+
+[Install]
+WantedBy=graphical.target

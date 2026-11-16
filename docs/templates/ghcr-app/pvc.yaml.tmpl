@@ -1,0 +1,13 @@
+# Data for __APP__. No storageClassName: the cluster default is used. Velero's schedule covers the
+# homeserver namespace; delete this file and the volume in deployment.yaml if the app keeps no state.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: __APP__-data
+  labels:
+    app.kubernetes.io/name: __APP__
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi

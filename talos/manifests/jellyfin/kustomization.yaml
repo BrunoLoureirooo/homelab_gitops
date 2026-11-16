@@ -1,0 +1,19 @@
+# Jellyfin for the Talos cluster (plan 15-07 Task 2). Talos-only: nothing under
+# argocd/ references this. Deployed by hand during G2 through the manual-sync
+# Application talos/apps-src/jellyfin.yaml. The library is on mini01's two local Toshiba disks, mounted
+# read-only as /media/disk1 and /media/disk2 (see deployment.yaml); the web UI is on the tailnet through the Tailscale Ingress (ingress.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: homeserver
+resources:
+  - deployment.yaml
+  - service.yaml
+  - pvc.yaml
+  - ingress.yaml
+patches:
+  # The numeric gids of the `render` and `video` groups as they appear on the
+  # Talos node's /dev/dri (recorded in talos/CUTOVER.md). Replace the zeros.
+  - path: gids-patch.yaml
+    target:
+      kind: Deployment
+      name: jellyfin

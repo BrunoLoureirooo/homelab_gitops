@@ -1,0 +1,99 @@
+# Coverflex meal-card importer for Actual Budget (github.com/rodriguestiago0/actual-mealcards).
+# Every 4 hours it logs in to Coverflex, fetches new transactions and writes them into one Actual account.
+#
+# SHIPPED AT 0 REPLICAS on purpose. It needs the Secret `actual-mealcards-secrets` (sealed by
+# talos/scripts/seal-actual-mealcards.sh) and the two account ids below, and those only exist after
+# Actual is running and the Coverflex token is created. Steps: docs/plans/actual-budget.md, section 7a.
+# Unofficial: it logs in to Coverflex the way the phone app does; if Coverflex changes that, the importer
+# breaks until the project updates. The Coverflex token expires; see the runbook.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: actual-mealcards-config
+  labels:
+    app.kubernetes.io/name: actual-mealcards
+data:
+  # Non-secret ids. The operator edits these two in a PR once the Actual account exists.
+  # COVERFLEX_ACTUAL_ACCOUNT: the Actual account id (the long id in the account's URL in Actual).
+  # COVERFLEX_ACCOUNT: the Coverflex pocket id of the meal card [UNVERIFIED how to read it; see runbook].
+  COVERFLEX_ACTUAL_ACCOUNT: "REPLACE-WITH-ACTUAL-ACCOUNT-ID"
+  COVERFLEX_ACCOUNT: "REPLACE-WITH-COVERFLEX-POCKET-ID"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actual-mealcards
+  labels:
+    app.kubernetes.io/name: actual-mealcards
+spec:
+  # Keep at 0 until the Secret and both ids exist; then set 1 in a PR. Never more than 1.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: actual-mealcards
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: actual-mealcards
+    spec:
+      # The importer never talks to the Kubernetes API: no token is mounted into the pod.
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: mini01
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000 # the image's `node` user
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: actual-mealcards
+          image: docker.io/rodriguestiago0/actual-mealcards@sha256:89243a4eb9ed9a8a3c57c003ff3f25fba2d5b7add99d7fe26aa468228d4d03eb # 1.0.43
+          # Secret keys: ACTUAL_SERVER_PASSWORD, ACTUAL_SYNC_ID, COVERFLEX_USERNAME, COVERFLEX_PASSWORD,
+          # COVERFLEX_USER_AGENT_TOKEN and, only with end-to-end encryption, ACTUAL_FILE_PASSWORD.
+          envFrom:
+            - configMapRef:
+                name: actual-mealcards-config
+            - secretRef:
+                name: actual-mealcards-secrets
+          env:
+            - name: ACTUAL_SERVER_URL
+              value: http://actual-budget:5006
+            - name: ENABLE_COVERFLEX
+              value: "true"
+            - name: ENABLE_EDENRED
+              value: "false"
+            # Seconds first: every 4 hours (the project's default, stated here so it is visible).
+            - name: CRON_EXPRESSION
+              value: "0 0 */4 * * *"
+            - name: RUN_ON_START
+              value: "false"
+            - name: TZ
+              value: Europe/Lisbon
+            # The budget cache is downloaded here on each run. The image default (./temp_data_actual) is
+            # inside the image; an emptyDir is used so the root filesystem is not written to.
+            - name: ACTUAL_DATA_DIR
+              value: /cache
+            # COVERFLEX_IMPORT_FROM (YYYY-MM-DD) is left unset: the first import takes the whole history.
+            # Set it in a PR if you only want transactions from a given date.
+          resources:
+            requests:
+              cpu: 10m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 384Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 512Mi

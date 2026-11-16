@@ -1,0 +1,32 @@
+# CI-only machine config patch for the single-node harness (plan 15-01). This
+# directory (talos/test/) is the only place a /dev/ path or a QEMU user-network
+# address may appear. Never rendered for real nodes. Talos 1.14 typed documents.
+machine:
+  certSANs:
+    - 127.0.0.1
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  diskSelector:
+    match: disk.dev_path == "/dev/vda"
+  wipe: false
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: tal-ci
+auto: "off"
+---
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+$patch: delete
+---
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+labels:
+  node-role.kubernetes.io/control-plane: ""
+---
+apiVersion: v1alpha1
+kind: KubeAPIServerConfig
+certExtraSANs:
+  - 127.0.0.1

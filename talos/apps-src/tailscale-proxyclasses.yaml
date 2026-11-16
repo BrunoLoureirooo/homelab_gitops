@@ -1,0 +1,19 @@
+# Talos-only Application: extra Tailscale ProxyClasses (currently `nas`, which pins the proxy of the
+# `nas` tailnet device to mini02 next to Samba). Lives in talos/apps-src/, NOT in argocd/apps/.
+#
+# Manual sync only. Sync it AFTER the tailscale-operator app (it provides the ProxyClass CRD) and
+# BEFORE syncing a Service that names one of these classes in its tailscale.com/proxy-class annotation.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-proxyclasses
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+    targetRevision: main
+    path: talos/manifests/tailscale-proxyclasses
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale

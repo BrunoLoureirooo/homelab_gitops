@@ -1,0 +1,83 @@
+# Fed to the vmware-tanzu/velero chart via argocd/apps/velero.yaml's
+# multi-source $values reference.
+#
+# Reconciled 2026-09-25 against ~/velero/veleroValues.yaml, the values file
+# actually `helm upgrade --install`'d on mini01 (fetched live via SSH, not
+# guessed) - see argocd/README.md Section 4. Matches that file field-for-field
+# except where noted below. The one thing still not nailed down is the chart
+# version itself (argocd/apps/velero.yaml) - no file on disk records it, only
+# a live `helm list -A -n velero` can confirm that. Confirm with a live
+# `helm get values -a velero -n velero` before syncing regardless, per
+# Section 3 (adopt, never recreate) - things can drift between an audit and
+# a sync.
+
+configuration:
+  uploaderType: kopia # FSB/kopia mode per the live nodeAgent deployment - no separate restic DaemonSet image needed.
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: velero-backups
+      default: true
+      config:
+        region: minio                                    # dummy - MinIO ignores it, the S3 API requires the field to be set
+        s3Url: http://minio.velero.svc.cluster.local:9000 # MinIO runs in the velero namespace, not its own - see argocd/apps/minio.yaml
+        s3ForcePathStyle: "true"                           # required for MinIO/any non-AWS S3-compatible endpoint
+  volumeSnapshotLocation: []
+
+deployNodeAgent: true
+
+# Scoped credential from ansible/roles/svc_velero + kubeseal, referenced
+# by name - NOT inline secretContents. The live deployment currently has no
+# explicit `credentials:` override at all, which means it's using the
+# vmware-tanzu/velero chart's own default secret name (`cloud-credentials`)
+# fed with MinIO's ROOT key directly - the exact leak this role's header
+# comment describes (ansible/roles/svc_velero/tasks/main.yml). Setting
+# `existingSecret` explicitly here is the actual fix (a scoped user, sealed),
+# not just a rotation - it happens to keep the same secret name the chart
+# already defaults to, so adopting this value is a credential swap, not a
+# new secret reference.
+credentials:
+  useSecret: true
+  existingSecret: cloud-credentials
+
+initContainers:
+  - name: velero-plugin-for-aws
+    image: "velero/velero-plugin-for-aws:v1.13.1" # confirmed live (~/velero/veleroValues.yaml) - keep in lockstep with the velero chart/app version above once that's confirmed
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+
+# Matches the live values file exactly.
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+
+nodeAgent:
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+schedules:
+  homeserver-nightly:
+    schedule: "0 10 * * 2" # preserved exactly from ~/velero/backupChron.yaml
+    template:
+      ttl: "720h0m0s"
+      includedNamespaces:
+        - homeserver # live schedule scopes to homeserver only, not "*" - narrower and correct, matches the actual file
+  # Separate from homeserver-nightly on purpose: a different namespace, a
+  # different cadence (nightly - the bot's WhatsApp session and booking state
+  # change often and the volume is ~100Mi), and it is the only schedule that
+  # opts the pod volumes into kopia file-system backup. Without
+  # defaultVolumesToFsBackup Velero would save only the PVC *object*, not the
+  # /data contents (no CSI snapshot class is configured here), so the backup
+  # would be useless for restoring the session. Backing up the namespace also
+  # captures the `cp-reserva-bot-key` Secret the bot creates at runtime (it is
+  # not in git): /data is encrypted with it, so the data is unreadable
+  # without it. Times are UTC (the Velero server's zone).
+  cp-reserva-bot-nightly:
+    schedule: "30 3 * * *"
+    template:
+      ttl: "720h0m0s"
+      defaultVolumesToFsBackup: true
+      includedNamespaces:
+        - cp-reserva-bot

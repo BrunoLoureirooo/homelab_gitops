@@ -1,0 +1,53 @@
+---
+# The MACHINE-SPECIFIC layer for victus: the headless-peripherals script +
+# its narrowly-scoped sudoers rule, and a guard that keeps the retired backup bind mount gone.
+# Both are tied to THIS laptop (its USB peripherals, its disk layout), not
+# generic to any other host and not universal (that's host_config, which is also
+# where victus's SSH hardening lives).
+#
+# History: this role used to assert a LUKS data disk (the 256 GB drive), its
+# /etc/crypttab entry and the vg-victus volume group, and two service roles
+# (since removed) mounted LVs from it. The backup data moved onto the 1 TB system
+# disk on 2026-10-13 and the 256 leaves victus at the Talos cutover, so all of
+# that is gone. Nothing here creates, formats or resizes a disk.
+
+- name: Deploy headless-peripherals script
+  ansible.builtin.copy:
+    src: headless-peripherals
+    dest: /usr/local/bin/headless-peripherals
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy headless-peripherals sudoers rule
+  ansible.builtin.copy:
+    src: headless-peripherals.sudoers
+    dest: /etc/sudoers.d/headless-peripherals
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+
+# --- The retired data disk must not come back --------------------------------
+# A crypttab line for a disk that is not in the machine makes boot wait for a
+# passphrase prompt. It was removed by hand on 2026-10-13; this keeps it removed
+# if anyone re-adds it, and only ever removes that one line.
+- name: Ensure there is no crypttab entry for the retired data disk
+  ansible.builtin.lineinfile:
+    path: /etc/crypttab
+    regexp: '^victus-data\s'
+    state: absent
+
+# --- Backup bind mount: retired ----------------------------------------------
+# The Velero/MinIO data used to sit in /home/srv-backup, bind-mounted at /srv/backup.
+# Backups now live on mini02 (primary) and, later, the mini03 replica volume, and
+# the standalone MinIO and its data were removed from victus on 2026-11-04. This
+# keeps the bind mount from coming back. It only removes that one fstab entry (and
+# unmounts it); it never touches the directory or anything in it.
+- name: Ensure the retired backup bind mount is absent
+  ansible.posix.mount:
+    path: "{{ host_config_victus_backup_mount }}"
+    src: "{{ host_config_victus_backup_src }}"
+    fstype: none
+    opts: bind
+    state: absent

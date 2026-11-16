@@ -1,0 +1,37 @@
+# Talos overlay for Immich's infrastructure objects (plan 15-06 Task 4).
+#
+# The base is the live manifests under argocd/manifests/immich-infra/, referenced
+# file by file and never copied or edited. This overlay only ADDS WAL archiving and
+# base backups to the immich-pg Cluster plus a ScheduledBackup.
+#
+# Those base files sit in a directory without a kustomization.yaml and outside this
+# root, so build with the load restrictor off:
+#
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone talos/overlays/immich-infra
+#
+# Argo CD should not need that flag: talos/overlays/render.sh builds this overlay into
+# talos/manifests/immich-infra/immich-infra.yaml, the Talos Application points at that
+# directory (talos/overrides/15-06.yaml), and .github/scripts/check-backups-06.sh fails when
+# the committed file differs from a fresh build.
+#
+# If 15-03's storage verdict is local-path, also enable the two patches in optional/
+# (uncomment the lines marked STORAGE below), then re-run render.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../argocd/manifests/immich-infra/immich-cluster.yaml
+  - ../../../argocd/manifests/immich-infra/immich-ingress.yaml
+  # the library lives on the mini02 SMB share (The operator 2026-10-17), not on a local volume
+  - library-smb.yaml
+  - scheduled-backup.yaml
+patches:
+  - path: backup-patch.yaml
+    target:
+      group: postgresql.cnpg.io
+      kind: Cluster
+      name: immich-pg
+  # STORAGE (only for STORAGE_VERDICT=local-path in talos/FINDINGS.md):
+  # - path: optional/storageclass-cluster.yaml
+  #   target: { group: postgresql.cnpg.io, kind: Cluster, name: immich-pg }
+  # - path: optional/storageclass-library.yaml
+  #   target: { kind: PersistentVolumeClaim, name: immich-library-pvc }

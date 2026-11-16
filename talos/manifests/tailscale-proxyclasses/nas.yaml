@@ -1,0 +1,29 @@
+# ProxyClass for the `nas` tailnet device: run its proxy pod on mini02, next to the Samba pod.
+#
+# Why: the default ProxyClass lets the operator schedule the proxy anywhere, and it landed on mini01
+# while Samba and the disks are on mini02. Every byte then crossed mini01 -> mini02 over flannel,
+# which here runs over tailscale0 (WireGuard), on top of the tunnel to the client: encrypted twice
+# on two small CPUs. With the proxy on mini02 the hop to Samba stays on the node.
+#
+# mini02 is cordoned on purpose (node.kubernetes.io/unschedulable), so the proxy pod must tolerate it,
+# like the samba-nas Deployment does.
+#
+# The MTU setting is copied from the `default` ProxyClass (argocd/manifests/tailscale-operator/
+# proxyclass.yaml, see its header for the reason). If that value changes, change it here too.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: nas
+spec:
+  statefulSet:
+    pod:
+      nodeSelector:
+        kubernetes.io/hostname: mini02
+      tolerations:
+        - key: node.kubernetes.io/unschedulable
+          operator: Exists
+          effect: NoSchedule
+      tailscaleContainer:
+        env:
+          - name: TS_DEBUG_MTU
+            value: "1150"

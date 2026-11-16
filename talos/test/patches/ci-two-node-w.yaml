@@ -1,0 +1,30 @@
+# CI-only patches for the two-node harness (plan 15-01), one file per node. The first
+# (worker)
+machine:
+  network:
+    interfaces:
+      - deviceSelector:
+          hardwareAddr: "52:54:00:12:34:56"
+        dhcp: true
+      - deviceSelector:
+          hardwareAddr: "52:54:00:12:00:12"
+        addresses:
+          - 192.168.100.12/24
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  diskSelector:
+    match: disk.dev_path == "/dev/vda"
+  wipe: false
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: tal-w1
+auto: "off"
+---
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+nodeIP:
+  validSubnets:
+    - 192.168.100.0/24

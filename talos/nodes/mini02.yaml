@@ -1,0 +1,14 @@
+# mini02 node patch (plan 15-02). Tokens are filled by render.sh from nodes/mini02.env.
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: "@@HOSTNAME@@"
+auto: "off"
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  wipe: true
+  diskSelector:
+    match: '@@DISK_MATCH@@'
+# --- plan 15-05 insertion point: mini02 data-disk volumes (ZFS mirror) go in
+# patches/volumes-mini02.yaml, which render.sh appends automatically.

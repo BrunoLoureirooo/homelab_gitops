@@ -1,0 +1,71 @@
+# The backup target: a single-node MinIO on mini02, storing on the ZFS mirror dataset tank/backups
+# (mounted by the host at /var/mnt/tank/backups; /var/mnt is the one place the Talos kubelet sees
+# host mounts, so the pool mountpoint lives there). It replaces the standalone MinIO that used to
+# run on victus (The operator 2026-10-17: nothing backup-related stays on victus). The Service in
+# service.yaml (velero-backup-target) is the stable name every consumer uses.
+#
+# The root credentials are NOT in git: the Secret `minio-root` (MINIO_ROOT_USER / MINIO_ROOT_PASSWORD)
+# is created by hand until it is sealed (talos/dr/minio/setup-users.sh makes the scoped Velero user).
+# mini02 stays cordoned for everything else; this Pod tolerates the cordon taint and is pinned to it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: velero
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: mini02
+      tolerations:
+        - key: node.kubernetes.io/unschedulable
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        # the dataset is root-owned; MinIO runs as the image's non-root user
+        - name: own-data
+          image: docker.io/library/busybox:1.37
+          command: ["sh", "-c", "chown 65532:65532 /data"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      containers:
+        - name: minio
+          # Chainguard, same pin as the CI image in talos/dr/images.env (only publishes `latest`).
+          image: cgr.dev/chainguard/minio@sha256:c93745c56fccdaf0e5dcb88999a96a65a136428beb045ef5d546255a80d747a7
+          args: ["server", "/data", "--address", ":9000", "--console-address", "127.0.0.1:9001"]
+          envFrom:
+            - secretRef:
+                name: minio-root
+          ports:
+            - {name: s3, containerPort: 9000}
+          readinessProbe:
+            httpGet: {path: /minio/health/ready, port: s3}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /minio/health/live, port: s3}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/mnt/tank/backups
+            type: Directory

@@ -1,0 +1,68 @@
+# Fed to the immich-app/immich-charts chart via argocd/apps/immich.yaml's
+# multi-source $values reference.
+#
+# Verbatim from ~/immich/immich-values.yaml on mini01 (fetched live via SSH,
+# not guessed - see argocd/README.md Section 4/10), the values file actually
+# `helm upgrade --install`'d there. Kept byte-for-byte rather than
+# "corrected" against my own reading of the chart's schema: this file is
+# what's really running (immich-server + immich-valkey both 1/1 Running, 30d
+# old per the live audit), so the first ArgoCD diff staying clean depends on
+# reproducing it exactly, quirks included. `machine-learning.enabled: false`
+# in particular MUST stay explicit - the chart defaults it to true, and this
+# was deliberately disabled to save ~4Gi RAM + 1 core (argocd/README.md
+# Section 2 "Decisions already made").
+#
+# postgresql (the chart's own bundled Postgres) is deliberately left
+# unset here, same as the live file - this deployment points at the external
+# CNPG cluster instead (argocd/manifests/immich-infra/immich-cluster.yaml)
+# via DB_HOSTNAME below. Confirm with a live `helm get values -a immich -n
+# homeserver` before syncing that a chart version bump hasn't changed that
+# default - Section 3/4.
+controllers:
+  main:
+    containers:
+      main:
+        env:
+          DB_HOSTNAME: immich-pg-rw.homeserver.svc.cluster.local
+          DB_DATABASE_NAME: immich
+          DB_USERNAME:
+            valueFrom: { secretKeyRef: { name: immich-db-creds, key: username } }
+          DB_PASSWORD:
+            valueFrom: { secretKeyRef: { name: immich-db-creds, key: password } }
+
+immich:
+  persistence:
+    library:
+      existingClaim: immich-library-pvc
+
+valkey:
+  enabled: true
+
+server:
+  controllers:
+    main:
+      # Velero file-system backup is opt-in per volume. This was only ever set by
+      # hand on the live Deployment (not in the repo), so a recreate, like
+      # Vaultwarden's 2026-09-26 chart move, would silently drop it. Value
+      # matches live exactly. Do NOT add it to immich-pg/valkey: Postgres needs
+      # its own consistent backup.
+      pod:
+        annotations:
+          backup.velero.io/backup-volumes: data
+      containers:
+        main:
+          resources:
+            requests: { cpu: "250m", memory: 1Gi }
+            limits: { cpu: "2", memory: 3Gi }
+          probes:
+            liveness:
+              enabled: true
+              custom: true
+              spec:
+                httpGet: { path: /api/server/ping, port: 2283 }
+                initialDelaySeconds: 90
+                periodSeconds: 30
+                failureThreshold: 4
+
+machine-learning:
+  enabled: false

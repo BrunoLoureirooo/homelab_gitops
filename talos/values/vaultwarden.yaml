@@ -1,0 +1,97 @@
+# Extra valueFile for the Talos copy of the vaultwarden app (plan 15-06 Task 3).
+# Added AFTER argocd/values/vaultwarden.yaml (talos/overrides/15-06.yaml), which is not
+# edited. It adds Litestream to the Vaultwarden Pod:
+#
+#   initContainer `litestream-restore`  fills an EMPTY volume from the S3 replica before
+#                                       Vaultwarden starts (a no-op when the database exists
+#                                       or when no replica exists yet)
+#   container `litestream`              streams the SQLite WAL to S3 every second
+#
+# Both mount the same `data` volume as the main container. Vaultwarden keeps running if the
+# sidecar dies (separate container, no shared lock beyond SQLite's own WAL).
+#
+# Prerequisites that are NOT in this file:
+#   * Secret `litestream-s3` (keys: access-key-id, secret-access-key), sealed by the operator in
+#     plan 15-06 Task 6 into talos/sealed-secrets/
+#   * bucket `litestream` and a scoped MinIO user (docs/dr/minio-standalone.md)
+#   * Vaultwarden must use SQLite in WAL mode; litestream-roundtrip.sh proves the image's
+#     journal mode and fails with the reason if it is not `wal`
+#
+# The image tag is a decision recorded in talos/dr/images.env (LITESTREAM_*), never `latest`.
+# NOTE: Helm values cannot read images.env; the tag below is copied from it and the guard
+# .github/scripts/check-backups-06.sh fails when the two differ.
+
+controllers:
+  vaultwarden:
+    initContainers:
+      litestream-restore:
+        image:
+          repository: docker.io/litestream/litestream
+          tag: 0.3.13
+          digest: sha256:027eda2a89a86015b9797d2129d4dd447e8953097b4190e1d5a30b73e76d8d58
+        args:
+          - restore
+          - -if-db-not-exists
+          - -if-replica-exists
+          - -config
+          - /etc/litestream.yml
+          - /data/db.sqlite3
+        env:
+          LITESTREAM_ENDPOINT: http://velero-backup-target.velero.svc.cluster.local:9000
+          LITESTREAM_ACCESS_KEY_ID:
+            valueFrom: { secretKeyRef: { name: litestream-s3, key: access-key-id } }
+          LITESTREAM_SECRET_ACCESS_KEY:
+            valueFrom: { secretKeyRef: { name: litestream-s3, key: secret-access-key } }
+    containers:
+      litestream:
+        image:
+          repository: docker.io/litestream/litestream
+          tag: 0.3.13
+          digest: sha256:027eda2a89a86015b9797d2129d4dd447e8953097b4190e1d5a30b73e76d8d58
+        args:
+          - replicate
+          - -config
+          - /etc/litestream.yml
+        env:
+          LITESTREAM_ENDPOINT: http://velero-backup-target.velero.svc.cluster.local:9000
+          LITESTREAM_ACCESS_KEY_ID:
+            valueFrom: { secretKeyRef: { name: litestream-s3, key: access-key-id } }
+          LITESTREAM_SECRET_ACCESS_KEY:
+            valueFrom: { secretKeyRef: { name: litestream-s3, key: secret-access-key } }
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { cpu: 200m, memory: 96Mi }
+
+configMaps:
+  litestream:
+    data:
+      litestream.yml: |
+        dbs:
+          - path: /data/db.sqlite3
+            replicas:
+              - type: s3
+                bucket: litestream
+                path: vaultwarden
+                endpoint: ${LITESTREAM_ENDPOINT}
+                region: minio
+                force-path-style: true
+                sync-interval: 1s
+                snapshot-interval: 6h
+                retention: 72h
+
+persistence:
+  litestream-config:
+    type: configMap
+    identifier: litestream
+    advancedMounts:
+      vaultwarden:
+        litestream:
+          - path: /etc/litestream.yml
+            subPath: litestream.yml
+            readOnly: true
+        litestream-restore:
+          - path: /etc/litestream.yml
+            subPath: litestream.yml
+            readOnly: true
+  # The `data` volume comes from argocd/values/vaultwarden.yaml with globalMounts at
+  # /data, so it is already mounted read-write into the sidecar and the init container.

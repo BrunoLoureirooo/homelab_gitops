@@ -1,0 +1,256 @@
+groups:
+  - name: meta
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels: {severity: info}
+        annotations: {summary: "Always firing: the monitoring heartbeat"}
+      - alert: PrometheusAlertmanagerUnreachable
+        expr: prometheus_notifications_alertmanagers_discovered < 1
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "Prometheus sees no Alertmanager: alerts cannot be delivered"}
+      - alert: PrometheusRuleFailures
+        expr: increase(prometheus_rule_evaluation_failures_total[10m]) > 0
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Prometheus rule evaluation is failing"}
+      - alert: PrometheusNotificationsFailing
+        expr: increase(prometheus_notifications_errors_total[15m]) > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Prometheus cannot send notifications to Alertmanager"}
+      - alert: TargetDown
+        expr: up == 0
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Scrape target {{ $labels.job }} {{ $labels.instance }} is down"}
+      - alert: PrometheusTSDBNearCap
+        expr: prometheus_tsdb_storage_blocks_bytes > 6.3e9
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "Prometheus TSDB is above 90% of its 7 GB size cap; old data is being dropped early"}
+
+  - name: nodes
+    rules:
+      - alert: NodeDown
+        expr: up{job="node"} == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "Node {{ $labels.node }} is not reporting metrics"}
+      - alert: NodeNotReady
+        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "Node {{ $labels.node }} is NotReady"}
+      - alert: NodePressure
+        expr: kube_node_status_condition{condition=~"MemoryPressure|DiskPressure|PIDPressure",status="true"} == 1
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "Node {{ $labels.node }} reports {{ $labels.condition }}"}
+      - alert: NodeMemoryHigh
+        expr: 1 - ((node_memory_MemAvailable_bytes + on(instance) group_left() (clamp_min(node_zfs_arc_size - node_zfs_arc_c_min, 0) or (0 * node_memory_MemTotal_bytes))) / node_memory_MemTotal_bytes) > 0.90
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Memory use above 90% on {{ $labels.node }} for 15 min (ZFS ARC counted as available)"}
+      - alert: NodeMemoryCritical
+        expr: 1 - ((node_memory_MemAvailable_bytes + on(instance) group_left() (clamp_min(node_zfs_arc_size - node_zfs_arc_c_min, 0) or (0 * node_memory_MemTotal_bytes))) / node_memory_MemTotal_bytes) > 0.95
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "Memory use above 95% on {{ $labels.node }}: OOM kills are likely (ZFS ARC counted as available)"}
+      - alert: NodeCPUHigh
+        expr: 1 - avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.90
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "CPU above 90% on {{ $labels.node }} for 30 min"}
+      - alert: NodeFilesystemLow
+        expr: |
+          node_filesystem_avail_bytes{mountpoint!~"/var/mnt/tank.*"} / node_filesystem_size_bytes{mountpoint!~"/var/mnt/tank.*"} < 0.15
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.node }} {{ $labels.mountpoint }} has less than 15% free"}
+      - alert: NodeFilesystemCritical
+        expr: |
+          node_filesystem_avail_bytes{mountpoint!~"/var/mnt/tank.*"} / node_filesystem_size_bytes{mountpoint!~"/var/mnt/tank.*"} < 0.05
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "{{ $labels.node }} {{ $labels.mountpoint }} has less than 5% free"}
+      - alert: NodeFilesystemFillingFast
+        expr: predict_linear(node_filesystem_avail_bytes{mountpoint!~"/var/mnt/tank.*"}[6h], 24 * 3600) < 0 and node_filesystem_size_bytes{mountpoint!~"/var/mnt/tank.*"} > 5e9
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.node }} {{ $labels.mountpoint }} will be full within 24 h at the current rate"}
+
+  - name: storage
+    rules:
+      - alert: ZfsPoolNotOnline
+        expr: node_zfs_zpool_state{state!="online"} == 1
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "ZFS pool {{ $labels.zpool }} on {{ $labels.node }} is {{ $labels.state }} (degraded/faulted)"}
+      - alert: ZfsPoolMetricMissing
+        expr: absent(node_zfs_zpool_state{zpool="tank"})
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "No ZFS pool metrics for tank: the exporter cannot see the pool (check node-exporter on mini02)"}
+      - alert: NasQuotaLow
+        expr: node_filesystem_avail_bytes{mountpoint=~"/var/mnt/tank.+"} / node_filesystem_size_bytes{mountpoint=~"/var/mnt/tank.+"} < 0.20
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "ZFS dataset {{ $labels.mountpoint }} has less than 20% of its quota free"}
+      - alert: NasQuotaCritical
+        expr: node_filesystem_avail_bytes{mountpoint=~"/var/mnt/tank.+"} / node_filesystem_size_bytes{mountpoint=~"/var/mnt/tank.+"} < 0.08
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "ZFS dataset {{ $labels.mountpoint }} has less than 8% of its quota free: writes will fail soon"}
+      - alert: PvcFilling
+        expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.85
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is over 85% full"}
+      - alert: PvcFull
+        expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.95
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is over 95% full"}
+      - alert: PvcNotBound
+        expr: kube_persistentvolumeclaim_status_phase{phase=~"Pending|Lost"} == 1
+        for: 30m      # a WaitForFirstConsumer claim with no pod yet is Pending: warn only after 30 min
+        labels: {severity: warning}
+        annotations: {summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is {{ $labels.phase }}"}
+
+  - name: workloads
+    rules:
+      - alert: PodCrashLooping
+        expr: max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[5m]) >= 1
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) is crash-looping"}
+      - alert: PodOOMKilled
+        expr: increase(kube_pod_container_status_restarts_total[10m]) > 0 and on (namespace, pod, container) kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) was OOM-killed: raise its memory limit"}
+      - alert: PodStuckPending
+        expr: kube_pod_status_phase{phase=~"Pending|Unknown"} == 1
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.namespace }}/{{ $labels.pod }} has been {{ $labels.phase }} for 30 min (scheduling problem?)"}
+      - alert: DeploymentUnavailable
+        expr: kube_deployment_status_replicas_available < kube_deployment_spec_replicas
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has fewer ready pods than wanted"}
+      - alert: StatefulSetNotReady
+        expr: kube_statefulset_status_replicas_ready < kube_statefulset_replicas
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} is not ready (for namespace tailscale: a tailnet proxy is down)"}
+      - alert: TailscaleProxyDown
+        expr: kube_statefulset_status_replicas_ready{namespace="tailscale"} < 1
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "Tailscale proxy {{ $labels.statefulset }} has no ready pod: that app is unreachable on the tailnet"}
+      - alert: DaemonSetNotScheduled
+        expr: kube_daemonset_status_number_unavailable > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} has pods missing"}
+      - alert: JobFailed
+        expr: kube_job_status_failed > 0
+        labels: {severity: warning}
+        annotations: {summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed (the last 3 failed Jobs stay visible)"}
+      - alert: ZfsScrubFailed
+        expr: kube_job_status_failed{namespace="kube-system", job_name=~"zfs-scrub-.*"} > 0
+        labels: {severity: critical}
+        annotations: {summary: "The monthly ZFS scrub failed or the pool was not healthy afterwards"}
+      - alert: ZfsScrubNotRun
+        expr: time() - kube_cronjob_status_last_successful_time{namespace="kube-system", cronjob="zfs-scrub"} > 40 * 86400
+        labels: {severity: warning}
+        annotations: {summary: "No successful ZFS scrub in 40 days (the CronJob runs on the 1st of each month)"}
+      - alert: IntelGpuUnavailable
+        expr: kube_node_status_allocatable{node="mini01", resource="gpu_intel_com_i915"} < 1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "mini01 no longer offers the Intel GPU to pods: Jellyfin hardware transcoding falls back to CPU"}
+
+  - name: backups
+    rules:
+      - alert: VeleroBackupFailed
+        expr: velero_backup_last_status == 0
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "The last Velero backup of schedule {{ $labels.schedule }} failed"}
+      - alert: VeleroBackupTooOld
+        expr: time() - velero_backup_last_successful_timestamp{schedule=~"velero-homeserver-nightly|velero-cp-reserva-bot-nightly"} > 36 * 3600
+        labels: {severity: critical}
+        annotations: {summary: "No successful Velero backup of {{ $labels.schedule }} for more than 36 h"}
+      - alert: VeleroBackupMetricMissing
+        expr: absent(velero_backup_last_successful_timestamp{schedule="velero-homeserver-nightly"})
+        for: 36h
+        labels: {severity: warning}
+        annotations: {summary: "Velero reports no successful homeserver backup at all (the gauge is empty after a Velero restart until the next success)"}
+      - alert: VeleroStorageLocationUnavailable
+        expr: velero_backup_location_status_gauge == 0
+        for: 15m
+        labels: {severity: critical}
+        annotations: {summary: "Velero cannot reach its backup location {{ $labels.backup_location_name }} (MinIO on mini02?)"}
+      - alert: BackupReplicaMirrorStale
+        expr: time() - kube_cronjob_status_last_successful_time{namespace="velero", cronjob="backup-replica-mirror"} > 36 * 3600
+        labels: {severity: warning}
+        annotations: {summary: "The mini03 backup replica mirror has not succeeded for more than 36 h (the CronJob runs daily)"}
+      - alert: BackupReplicaMirrorFailed
+        expr: kube_job_status_failed{namespace="velero", job_name=~"backup-replica-mirror-.*"} > 0
+        labels: {severity: warning}
+        annotations: {summary: "A backup-replica-mirror run failed ({{ $labels.job_name }}): the second backup copy is falling behind"}
+      - alert: BackupsPoolLow
+        expr: node_filesystem_avail_bytes{mountpoint="/var/mnt/tank/backups"} / node_filesystem_size_bytes{mountpoint="/var/mnt/tank/backups"} < 0.15
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "tank/backups (the Velero primary on mini02) has less than 15% free"}
+      - alert: BackupsPoolCritical
+        expr: node_filesystem_avail_bytes{mountpoint="/var/mnt/tank/backups"} / node_filesystem_size_bytes{mountpoint="/var/mnt/tank/backups"} < 0.05
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "tank/backups has less than 5% free: new backups will fail"}
+      - alert: CnpgDown
+        expr: cnpg_collector_up == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "PostgreSQL {{ $labels.cluster }} ({{ $labels.pod }}) is down: Immich has no database"}
+      - alert: CnpgBackupTooOld
+        expr: time() - cnpg_collector_last_available_backup_timestamp > 36 * 3600
+        labels: {severity: warning}
+        annotations: {summary: "No successful CNPG base backup of {{ $labels.cluster }} for more than 36 h (ScheduledBackup immich-pg-daily)"}
+      - alert: CnpgBackupFailed
+        expr: cnpg_collector_last_failed_backup_timestamp > cnpg_collector_last_available_backup_timestamp
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "The last CNPG backup of {{ $labels.cluster }} failed"}
+      - alert: CnpgWalArchiveBacklog
+        expr: cnpg_collector_pg_wal_archive_status{value="ready"} > 50
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $labels.cluster }} has more than 50 WAL files waiting for archive: backup target unreachable?"}
+
+  - name: gitops-and-certs
+    rules:
+      - alert: ArgoAppDegraded
+        expr: argocd_app_info{health_status=~"Degraded|Missing"} == 1
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Argo CD app {{ $labels.name }} is {{ $labels.health_status }}"}
+      - alert: ArgoAppOutOfSync
+        expr: argocd_app_info{sync_status="OutOfSync"} == 1
+        for: 24h        # apps are manual-sync: a merged PR waits for the operator; alert only after a day
+        labels: {severity: info}
+        annotations: {summary: "Argo CD app {{ $labels.name }} has been OutOfSync for 24 h (merged but not synced?)"}
+      - alert: CertificateExpiringSoon
+        expr: certmanager_certificate_expiration_timestamp_seconds - time() < 14 * 86400
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in under 14 days"}
+      - alert: CertificateNotReady
+        expr: certmanager_certificate_ready_status{condition="False"} == 1
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: "Certificate {{ $labels.namespace }}/{{ $labels.name }} is not Ready"}

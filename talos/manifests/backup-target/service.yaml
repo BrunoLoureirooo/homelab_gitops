@@ -1,0 +1,16 @@
+# The one stable name Velero and the Talos backup jobs (immich-infra,
+# Vaultwarden's Litestream) use for the backup target: the MinIO in minio.yaml next to this file,
+# which runs on mini02 over the ZFS dataset tank/backups. Consumers keep this name; nothing
+# backup-related runs on victus any more (The operator 2026-10-17).
+apiVersion: v1
+kind: Service
+metadata:
+  name: velero-backup-target
+  namespace: velero
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3

@@ -1,0 +1,3 @@
+# Worker patch (mini02): workers need nothing beyond patches/common.yaml. The
+# empty map keeps `talosctl gen config --config-patch` happy.
+machine: {}

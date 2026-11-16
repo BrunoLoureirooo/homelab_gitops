@@ -1,0 +1,107 @@
+# One replica pinned to mini01. Hardware transcoding (Intel Quick Sync, HD 530 era, driver i915).
+# The `homeserver` namespace carries the `privileged` Pod Security label (plan 15-03, a deliberate
+# exception) because the config and media volumes may be host-backed, which the baseline profile does not allow.
+#
+# Hardware access (measured on the Talos node, 2026-10-17): the i915 extension and firmware are
+# present and /dev/dri/renderD128 is root-owned mode 0666, so no supplemental group is needed (see
+# gids-patch.yaml). A NON-privileged container cannot open a hostPath /dev/dri though: the runtime's
+# device allowlist denies it ("Operation not permitted"). So the pod requests `gpu.intel.com/i915`
+# and the Intel GPU device plugin (talos/manifests/intel-gpu-plugin) lets the runtime allow exactly
+# that device. The container stays unprivileged. After the first start, set Dashboard > Playback >
+# Transcoding to Intel QuickSync (or VAAPI) with device /dev/dri/renderD128 in the Jellyfin UI.
+#
+# Library: it lives on mini01's two local Toshiba disks, NOT on the NAS (The operator 2026-10-19). Disk 1
+# (/var/mnt/media) is mounted at /media/disk1 and disk 2 (/var/mnt/media2) at /media/disk2, both read-only,
+# so the setup wizard gets one or two library paths (/media/disk1, /media/disk2, or /media for all).
+# The two volumes are independent XFS filesystems with NO redundancy (no RAID, no mirror), and the
+# hostPaths are not PVCs, so Velero does not back them up. The only other copy is the original on victus.
+# Because the disks are node-local the pod must stay on mini01 (nodeSelector below).
+#
+# Image jellyfin/jellyfin:10.10.7 starts and answers /health on this cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  labels:
+    app.kubernetes.io/name: jellyfin
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jellyfin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jellyfin
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: mini01
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        supplementalGroups: [0, 0] # replaced by gids-patch.yaml
+      containers:
+        - name: jellyfin
+          image: jellyfin/jellyfin:10.10.7
+          ports:
+            - name: http
+              containerPort: 8096
+          env:
+            - name: JELLYFIN_CACHE_DIR
+              value: /cache
+          # An explicit cpu limit is required: without one the `homeserver` LimitRange `default-limits`
+          # injects a default cpu limit of 500m, which throttled software transcoding of an HEVC 10-bit
+          # 1080p film to 0.135x realtime. mini01 has 4 cores (about 4000m) shared with Immich, Postgres,
+          # Argo CD and others, so 3 cores leaves roughly one core of headroom for the rest of the node.
+          # Memory 4Gi covers transcoding plus library metadata scans.
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "3"
+              memory: 4Gi
+              gpu.intel.com/i915: "1" # from the Intel GPU device plugin (talos/manifests/intel-gpu-plugin)
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: cache
+              mountPath: /cache
+            - name: media-disk1
+              mountPath: /media/disk1
+              readOnly: true
+            - name: media-disk2
+              mountPath: /media/disk2
+              readOnly: true
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: jellyfin-config
+        - name: cache
+          emptyDir: {}
+        - name: media-disk1
+          hostPath:
+            path: /var/mnt/media # Talos user volume u-media (first Toshiba, xfs), Films / Absolutely Anything / anime / Captures
+            type: Directory
+        - name: media-disk2
+          hostPath:
+            path: /var/mnt/media2 # Talos user volume u-media2 (second Toshiba, xfs), TopGear / The.Grand.Tour
+            type: Directory

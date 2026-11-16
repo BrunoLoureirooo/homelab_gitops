@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Test stand-in for the read-only kubectl calls of cutover-preflight.sh and
+# g2-check.sh. It answers from the files in $FAKE_KUBE_DIR and refuses every
+# verb that is not a read (so a script that wrote would fail the test).
+set -euo pipefail
+args="$*"
+f() { cat "$FAKE_KUBE_DIR/$1"; }
+case "$args" in
+  *" apply "* | *" create "* | *" delete "* | *" patch "* | *" edit "* | *" scale "*)
+    echo "fake kubectl: write verb refused: $args" >&2
+    exit 99
+    ;;
+  *"get ns"*) echo "namespace/default" ;;
+  *"get node mini01"*) f node-ready ;;
+  *"get deploy -o json"*) f deploy.json ;;
+  *"get ingress -o json"*) f ingress.json ;;
+  *"cnpg.io/instanceRole=primary"*) f primary ;;
+  *" exec "*"psql"*) f asset-count ;;
+  *" exec "*"ls -t"*) f jellyfin-log ;;
+  *" exec "*"grep"*) exit "$(f qsv-rc)" ;;
+  *"-n cp-reserva-bot get pods -o json"*) f pods-bot.json ;;
+  *"-n cp-reserva-bot get pvc -o json"*) f pvc-bot.json ;;
+  *"get pods -o json"*) f pods.json ;;
+  *"get pvc -o json"*) f pvc.json ;;
+  *"homeserver-hourly"*) f backups-hourly.json ;;
+  *"get backups.velero.io"*) f backups.json ;;
+  *)
+    echo "fake kubectl: unexpected call: $args" >&2
+    exit 98
+    ;;
+esac

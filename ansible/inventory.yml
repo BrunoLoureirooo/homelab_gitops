@@ -1,0 +1,54 @@
+---
+# Hosts Ansible still manages: victus (Arch desktop, outside the cluster) and mini04
+# (kiosk display host). mini01, mini02 and mini03 are Talos nodes, configured from
+# talos/, not here. mini03 is a libvirt VM on victus (roles/victus_vm).
+#
+# The host keeps Tailscale (permanently, it is how the desktop reaches tailnet apps).
+
+# ---------------------------------------------------------------------------
+# Hosts that are managed by Ansible but are not cluster nodes. victus: the desktop
+# (Tailscale, its laptop hardware tweaks, and later the mini03 VM). Its Talos worker VM (mini03) is a separate cluster node and is NOT an
+# entry here: it is managed by the Talos configs, not by Ansible.
+# ---------------------------------------------------------------------------
+standalone:
+  hosts:
+    victus:
+      ansible_host: victus                # MagicDNS short name
+      ansible_user: vyrus-extreme
+      # victus runs its own deploy job with its own sudo password; kept in the
+      # vault because a run from your Mac alongside other hosts can only carry ONE
+      # password on the command line.
+      ansible_become_password: "{{ vault_become_password_victus }}"
+      # The Talos worker VM mini03 (roles/victus_vm), off until
+      # the 512 GB NVMe has been wiped on purpose. Keep this false until
+      # then: it needs the VM's MAC in the vault (victus_vm_mac: "{{ vault_victus_vm_mac }}").
+      # The disk layout (an LVM volume group on the 512 GB NVMe, found by serial) is
+      # only ever BUILT with victus_vm_disk_provision: true, a separate switch that
+      # stays false except for the one run that provisions a blank disk. The
+      # networking is macvtap on the wired NIC and changes nothing on the host. The
+      # host's Tailscale stays up. See ansible/README.md and docs/dr/mini03.md.
+      victus_vm_enabled: false
+      victus_vm_disk_provision: false
+      victus_vm_disk_serial: "{{ vault_victus_vm_disk_serial }}"
+    # mini04: Debian 13 display host (cage + Chromium kiosk, roles/kiosk). Not a
+    # cluster node. ansible_host is its MagicDNS short name, valid once it has joined
+    # the tailnet; before that, pass -e ansible_host=<lan-ip>.
+    mini04:
+      ansible_host: mini04
+      # TODO(user): set ansible_user to mini04's login (or pass -e mini04_user=...).
+      ansible_user: "{{ mini04_user | default('CHANGEME') }}"
+      ansible_become_password: "{{ vault_become_password_mini04 }}"
+      # The URL carries the tailnet name, which must not be committed in clear
+      # text, so it lives in the vault. To change the dashboard, edit
+      # vault_kiosk_url (roles/kiosk/README.md).
+      kiosk_url: "{{ vault_kiosk_url }}"
+
+# Variables for every host.
+all:
+  vars:
+    ansible_port: 22
+
+    # Public half of the CI deploy key (not a secret); its private half is the
+    # CI_DEPLOY_SSH_KEY Actions secret. host_config authorizes it on every managed host
+    # so deploy.yml can SSH in from a GitHub-hosted runner over the tailnet.
+    host_config_ci_runner_pubkey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAvMDd1VKpyP0Z9GgmZMW4joGhFdNEK5mpjbQ/qUVFp/ homelab-gitops-ci"

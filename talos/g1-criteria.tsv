@@ -1,0 +1,44 @@
+# G1 criteria (plan 15-04). Tab separated: id, class (must|known|should|info), owner plan, allowed verdicts, any-of members, consequence.
+# must: PASS or no-go (FAIL) / incomplete (UNKNOWN, HARDWARE-ONLY, missing). known: determined (PASS or FAIL if allowed). should: non-PASS is a consequence, never a block. info: recorded only.
+id	class	owner	allowed	members	consequence
+BOOT-SINGLE	must	15-01	PASS		no-go
+RESTART-DISK	must	15-01	PASS		no-go
+TWO-NODE	must	15-01	PASS		no-go
+WORKER-NO-ETCD	must	15-01	PASS		no-go
+WORKER-PODS-CP-DOWN	must	15-01	PASS		no-go
+VALIDATE	must	15-02	PASS		no-go
+RENDER-DET	must	15-02	PASS		no-go
+SOPS-ROUNDTRIP	must	15-02	PASS		no-go
+DISK-SELECT	must	15-02	PASS		no-go
+DISK-SELECT-NEGATIVE	must	15-02	PASS		no-go
+VOLUMES-MINI01	must	15-02	PASS		no-go
+VOLUMES-MEDIA-NEGATIVE	must	15-02	PASS		no-go
+PLATFORM-SYNC	must	15-03	PASS		no-go
+CNI-MTU	must	15-03	PASS		no-go
+STORAGE-BIND	must	15-03	PASS		no-go
+EMPTY-CLUSTER	must	15-03	PASS		no-go
+STORAGE-USERVOL-LOCALPATH	must	15-04	PASS		no-go
+UPGRADE-DATA	must	15-04	PASS	UPGRADE-PRESERVE-DATA,UPGRADE-NOPRESERVE-DATA	no-go (no upgrade path keeps data)
+EXT-I915	must	15-04	PASS		no-go (Jellyfin QSV impossible)
+EXT-TAILSCALE-SERVICE	must	15-04	PASS		no-go (tailnet node access impossible)
+RESET-DATA-SEPARATE-DISK	known	15-04	PASS|FAIL		incomplete if UNKNOWN; FAIL is allowed: the design relies on a Velero restore after a reset
+RESET-DATA-SYSTEM-DISK	known	15-04	PASS|FAIL		incomplete if UNKNOWN; FAIL is allowed: the design relies on a Velero restore after a reset
+RESET-NEGATIVE-CONTROL	known	15-04	PASS		incomplete: the data-safety results cannot be trusted without it
+EXT-REALTEK	should	15-04	PASS		firmware must be fixed before the hardware step
+EXT-UCODE	should	15-04	PASS		microcode extension missing: check the schematic before the hardware step
+CIFS-KERNEL	should	15-04	PASS		no csi-driver-smb; shares use NFS or an in-pod SMB (plans 15-03 and 15-05)
+LVM-IN-POD	should	15-04	PASS|FAIL		LVM probe did not run (UNKNOWN or missing)
+ZFS-LOADS	should	15-04	PASS		mini02 data uses one disk plus a second copy (plan 15-05)
+ZFS-MIRROR	should	15-04	PASS		mini02 data uses one disk plus a second copy (plan 15-05)
+ZFS-REBOOT-IMPORT	should	15-04	PASS		mini02 data uses one disk plus a second copy (plan 15-05)
+ZFS-DEGRADED-READ	should	15-04	PASS		mini02 data uses one disk plus a second copy (plan 15-05)
+UPGRADE-EXTENSION-ADD	should	15-04	PASS		adding an extension means reinstall plus Velero restore
+UKI-BOOT-SBOFF	should	15-04	PASS		decision D1 uses the classic installer with Secure Boot disabled
+UKI-BOOT-SBON-VM-ENROLL	should	15-04	PASS		decision D1 uses the classic installer with Secure Boot disabled
+MEM_USED_MB	info	15-01/15-04	any		recorded only
+LVM-EXTENSION	info	15-01/15-04	any		recorded only
+TOPOLVM-ON-TALOS	info	15-01/15-04	any		recorded only
+DRI-DEVICE	info	15-01/15-04	any		recorded only
+TAILSCALE-JOIN	info	15-01/15-04	any		recorded only
+UPGRADE-K8S-OBJECTS	info	15-04	any		recorded only (a ConfigMap kept across an upgrade with --preserve)
+RESET-DATA-DEFAULT	info	15-04	any		recorded only (the data volume after a plain reset)

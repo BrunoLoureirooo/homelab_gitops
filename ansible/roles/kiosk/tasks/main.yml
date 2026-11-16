@@ -1,0 +1,80 @@
+---
+# Display host for mini04 (Debian 13): cage (a single-window Wayland
+# compositor) running Chromium in kiosk mode on tty1 as an unprivileged user.
+# Design: docs/homelab-brief.md (kiosk section).
+# See README.md in this role for Day 0 and how to run it.
+
+- name: Refuse to run with the placeholder kiosk_url
+  ansible.builtin.assert:
+    that:
+      - "'<tailnet-name>' not in kiosk_url"
+    fail_msg: >-
+      kiosk_url is still the placeholder. Set vault_kiosk_url in the vault
+      (see roles/kiosk/README.md) or pass -e kiosk_url=...
+
+- name: Install cage, Chromium and fonts
+  ansible.builtin.apt:
+    name: "{{ kiosk_packages }}"
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+
+# No sudo group, no authorized_keys, locked password, nologin shell: the
+# account cannot be logged into over SSH or at a prompt, only started by
+# systemd.
+- name: Create the kiosk user
+  ansible.builtin.user:
+    name: "{{ kiosk_user }}"
+    system: true
+    home: "{{ kiosk_home }}"
+    create_home: true
+    shell: /usr/sbin/nologin
+    password_lock: true
+    groups: "{{ kiosk_groups }}"
+    append: true
+
+- name: Install the PAM service for the kiosk session
+  ansible.builtin.template:
+    src: pam-kiosk.j2
+    dest: /etc/pam.d/kiosk
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install kiosk.service
+  ansible.builtin.template:
+    src: kiosk.service.j2
+    dest: /etc/systemd/system/kiosk.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart kiosk
+
+- name: Enable kiosk.service
+  ansible.builtin.systemd_service:
+    name: kiosk.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Read the default systemd target
+  ansible.builtin.command: systemctl get-default
+  register: kiosk_default_target
+  changed_when: false
+  check_mode: false
+
+- name: Boot to graphical.target
+  ansible.builtin.command: systemctl set-default graphical.target
+  changed_when: true
+  when: kiosk_default_target.stdout != 'graphical.target'
+
+- name: Never sleep, suspend or hibernate
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: true
+  loop:
+    - sleep.target
+    - suspend.target
+    - hibernate.target
+    - hybrid-sleep.target

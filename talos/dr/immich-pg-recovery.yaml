@@ -1,0 +1,63 @@
+# Recovery form of the Immich Postgres Cluster (plan 15-06 Task 4, used by plan 15-07 and by
+# docs/dr/talos-backups.md "Recovery"). Apply THIS instead of the normal immich-pg Cluster when
+# the database must come back from the WAL archive instead of from a dump.
+#
+# It is the same Cluster as argocd/manifests/immich-infra/immich-cluster.yaml (same image,
+# extensions, owner, database, name) with the bootstrap swapped from initdb to recovery.
+# Fill in, then:  kubectl apply -f - < talos/dr/immich-pg-recovery.yaml
+#   targetTime : an RFC 3339 timestamp, or delete the whole recoveryTarget block to replay
+#                every archived WAL (recover to the latest point)
+# After it is healthy, switch back to the normal manifest (Argo's immich-infra app); the
+# archive keeps going under the NEW serverName set below (immich-pg-r1), so the normal manifest's
+# backup block must then use that serverName too (docs/dr/talos-backups.md, "Recovery"). Never
+# run this against a cluster that is still running: it creates a new, independent cluster of the
+# same name.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: immich-pg
+  namespace: homeserver
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  instances: 1
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:17-1.1.1
+  postgresql:
+    shared_preload_libraries: ["vchord.so"]
+  bootstrap:
+    recovery:
+      source: origin
+      database: immich
+      owner: immich
+      secret: { name: immich-db-creds }
+      recoveryTarget:
+        targetTime: "REPLACE-WITH-RFC3339-TIMESTAMP"
+  externalClusters:
+    - name: origin
+      barmanObjectStore:
+        destinationPath: s3://immich-pg/
+        endpointURL: http://velero-backup-target.velero.svc.cluster.local:9000
+        serverName: immich-pg
+        s3Credentials:
+          accessKeyId: { name: immich-pg-s3, key: ACCESS_KEY_ID }
+          secretAccessKey: { name: immich-pg-s3, key: ACCESS_SECRET_KEY }
+  backup:
+    retentionPolicy: "14d"
+    barmanObjectStore:
+      destinationPath: s3://immich-pg/
+      # A recovered cluster must archive under a NEW server name: CNPG refuses to archive into a
+      # path that already holds another history (the old `immich-pg` archive). Use the next
+      # number each time you recover (r1, r2, ...); the old archive stays readable as `origin`.
+      serverName: immich-pg-r1
+      endpointURL: http://velero-backup-target.velero.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId: { name: immich-pg-s3, key: ACCESS_KEY_ID }
+        secretAccessKey: { name: immich-pg-s3, key: ACCESS_SECRET_KEY }
+      wal: { compression: gzip }
+      data: { compression: gzip }
+  storage:
+    size: 8Gi
+    storageClass: topolvm-fast # change to the Talos class from talos/FINDINGS.md (STORAGE_CLASS_MAP) when it differs
+  resources:
+    requests: { cpu: "250m", memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }

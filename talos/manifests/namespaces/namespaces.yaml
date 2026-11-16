@@ -1,0 +1,48 @@
+# Namespaces of the Talos cluster (plan 15-03). Talos enforces the Pod Security
+# "baseline" level cluster-wide, so a namespace that runs privileged or hostPath
+# pods needs an explicit label. The `homeserver` namespace is NOT here: it is
+# owned by the generated cluster-baseline copy (talos/manifests/cluster-baseline),
+# which also labels it privileged (the deliberate exception for the Jellyfin
+# GPU device hostPath).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tailscale
+  labels:
+    pod-security.kubernetes.io/enforce: privileged # the operator's proxy pods need NET_ADMIN
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: velero
+  labels:
+    pod-security.kubernetes.io/enforce: privileged # the node agent mounts host paths for file-system backups
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: local-path-storage
+  labels:
+    pod-security.kubernetes.io/enforce: privileged # the provisioner's helper pods mount host paths
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cp-reserva-bot
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    pod-security.kubernetes.io/enforce: privileged # node-exporter needs hostPath + hostPID

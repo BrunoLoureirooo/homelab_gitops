@@ -1,0 +1,89 @@
+# Intel GPU device plugin (https://github.com/intel/intel-device-plugins-for-kubernetes), the standard
+# way to give a NON-privileged pod the Intel iGPU: the plugin advertises `gpu.intel.com/i915` and the
+# kubelet allocates /dev/dri/renderD128 to pods that request it, with the container runtime's device
+# allowlist opened for just that device. Without it a hostPath /dev/dri is denied ("Operation not
+# permitted", measured 2026-10-17). Pinned: release v0.37.1, image by digest (the pinned digest is the
+# multi-arch index of intel/intel-gpu-plugin:0.37.1).
+#
+# Differences from upstream deployments/gpu_plugin/base/intel-gpu-plugin.yaml, on purpose:
+#  - namespace kube-system, node restricted to mini01 (the only node with an Intel GPU) instead of
+#    relying on Node Feature Discovery labels, which this cluster does not run;
+#  - no seLinuxOptions type: that type is not part of the Talos SELinux policy;
+#  - -shared-dev-num=2 so a Jellyfin rollout (old and new pod briefly) can both hold the GPU.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: intel-gpu-plugin
+  namespace: kube-system
+  labels:
+    app: intel-gpu-plugin
+spec:
+  selector:
+    matchLabels:
+      app: intel-gpu-plugin
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: intel-gpu-plugin
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: mini01
+      containers:
+        - name: intel-gpu-plugin
+          image: intel/intel-gpu-plugin:0.37.1@sha256:004641b2547d58f1eadce58473fa160ad71377de1eb588cf1f82832387bf3e33
+          imagePullPolicy: IfNotPresent
+          args: ["-shared-dev-num=2"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              memory: 45Mi
+              cpu: 40m
+            limits:
+              memory: 115Mi
+              cpu: 100m
+          volumeMounts:
+            - name: devfs
+              mountPath: /dev/dri
+              readOnly: true
+            - name: sysfsdrm
+              mountPath: /sys/class/drm
+              readOnly: true
+            - name: kubeletsockets
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: cdipath
+              mountPath: /var/run/cdi
+      volumes:
+        - name: devfs
+          hostPath:
+            path: /dev/dri
+        - name: sysfsdrm
+          hostPath:
+            path: /sys/class/drm
+        - name: kubeletsockets
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: cdipath
+          hostPath:
+            path: /var/run/cdi
+            type: DirectoryOrCreate

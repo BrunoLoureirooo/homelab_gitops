@@ -1,0 +1,31 @@
+---
+# Template for the local, untracked variables file that turns on the mini03 VM role on victus.
+# Copy it to ~/victus-vm.local.yml (outside the repo) and edit. Use it with:
+#   cd ansible && ansible-playbook victus.yml -e @$HOME/victus-vm.local.yml
+# Add --check --diff first. Keep the real file out of git (the MAC is never committed).
+
+# Master switch. The whole role is off without it.
+victus_vm_enabled: true
+
+# Locally administered MAC for the VM (52:54:00:xx:xx:xx). Reserve it in the router if you want
+# a fixed address.
+victus_vm_mac: "52:54:00:00:00:03"
+
+# Path on victus of the Talos ISO from `talos/fetch-assets.sh mini03 iso` (copy it over with scp).
+# Set to "" once Talos is installed to the disk, so the VM boots from its own disk.
+victus_vm_install_iso: "/home/<user>/talos-mini03.iso"
+
+# Let the role start the VM. Leave false until you want the first boot.
+victus_vm_start: true
+
+# DESTRUCTIVE: creates the volume group and logical volumes, only on a provably blank 512 GB disk.
+# True for the one run that builds the layout, then back to false.
+victus_vm_disk_provision: false
+
+# Optional overrides (these are the defaults).
+victus_vm_network_mode: direct # macvtap: the host itself cannot reach the VM
+victus_vm_nic: eno1
+victus_vm_display: true # VNC on 127.0.0.1 only, reach it with an SSH tunnel
+victus_vm_display_port: 5900
+victus_vm_autostart: true
+victus_vm_inhibit_sleep: true

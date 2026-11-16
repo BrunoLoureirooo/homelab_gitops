@@ -1,0 +1,37 @@
+# New app, built 2026-09-25: cluster-wide objects that were previously
+# `kubectl apply -f`'d by hand on mini01 from loose files in $HOME
+# (~/namespaceStorage.yaml, ~/priorityClasses.yaml, ~/limitRange.yaml,
+# ~/localPathConfig.yaml) with no record beyond that - see
+# argocd/README.md Section 4/10. Not part of the original migration brief's
+# app list (that only named Immich/Vaultwarden/Velero/MinIO), but everything
+# else depends on it: the `homeserver` Namespace and `topolvm-fast`
+# StorageClass are what Immich's and Vaultwarden's PVCs actually reference,
+# and the PriorityClasses are what schedules them relative to each other.
+# "Every configuration tracked" doesn't work without this one too.
+#
+# Zero data footprint (no PVCs, no Secrets) and adopting an
+# already-populated Namespace/StorageClass is safe - this is Phase 0
+# material (see argocd/README.md Section 6), same risk tier as
+# sealed-secrets. Still starts manual-sync per Section 3 like everything
+# else, since `argocd app diff` should be read once before the first sync
+# regardless of risk.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-baseline
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+    targetRevision: main
+    path: argocd/manifests/cluster-baseline
+  destination:
+    server: https://kubernetes.default.svc
+    # Left unset: this app's manifests are cluster-scoped (Namespace,
+    # StorageClass, PriorityClass) or set their own namespace explicitly
+    # (LimitRange -> homeserver, the local-path ConfigMap -> kube-system).
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    # Manual sync, no automated block - same stance as every other app here.

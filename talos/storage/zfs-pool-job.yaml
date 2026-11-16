@@ -1,0 +1,77 @@
+# One-shot, idempotent creation of the mini02 ZFS mirror (plan 15-05).
+#
+# Applied by hand (operator-run, plan 15-05 Task 4) or by the CI job
+# talos/test/jobs/zfs-mirror.sh against a QEMU node. It is NOT part of any
+# ArgoCD Application: creating a pool is a one-time hardware action.
+#
+# The two devices are named in the ConfigMap below. On mini02 they are the raw partitions
+# /dev/disk/by-partlabel/r-zfs1 and /dev/disk/by-partlabel/r-zfs2 (patches/volumes-mini02.yaml).
+# (Older text below says drives; whole drives work too.) The committed values are
+# empty on purpose (no serial numbers in git). Before applying, make a LOCAL copy
+# with the two /dev/disk/by-id names filled in, or let CI patch them:
+#     kubectl -n kube-system create configmap zfs-pool-disks \
+#       --from-literal=DISK1=<by-id name 1> --from-literal=DISK2=<by-id name 2> \
+#       --dry-run=client -o yaml | kubectl apply -f -
+# THE JOB WIPES BOTH NAMED DRIVES when the pool does not exist yet.
+#
+# Safety:
+#   - refuses to run when either name is empty;
+#   - exits 0 without touching anything when the pool `tank` already exists;
+#   - never forces: a drive that already carries a pool label makes the create
+#     fail instead of overwriting it.
+#
+# Facts from the extension README (checked 2026-10-12): pools are created from a
+# privileged pod, the pool must mount under /var, SELinux contexts must be
+# disabled on the pool. Not documented, measured in CI: ZFS version, import on
+# boot, scrub behaviour.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zfs-pool-disks
+  namespace: kube-system
+data:
+  DISK1: ""
+  DISK2: ""
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: zfs-pool-create
+  namespace: kube-system
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/hostname: mini02
+      containers:
+        - name: zpool
+          image: docker.io/library/busybox:1.37
+          securityContext:
+            privileged: true
+          envFrom:
+            - configMapRef:
+                name: zfs-pool-disks
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              if [ -z "${DISK1:-}" ] || [ -z "${DISK2:-}" ]; then
+                echo "zfs-pool-create: DISK1 and DISK2 must be set (ConfigMap zfs-pool-disks)" >&2
+                exit 2
+              fi
+              # Run the host's zpool (from the zfs extension) in the host mount namespace.
+              host() { nsenter -t 1 -m -- "$@"; }
+              if host zpool list tank >/dev/null 2>&1; then
+                echo "zfs-pool-create: pool tank already exists, nothing to do"
+                exit 0
+              fi
+              host zpool create -o ashift=12 \
+                -O mountpoint=/var/tank -O acltype=posixacl -O xattr=sa -O compression=lz4 \
+                -O context=none -O fscontext=none -O defcontext=none -O rootcontext=none \
+                tank mirror "$DISK1" "$DISK2"
+              host zpool status tank

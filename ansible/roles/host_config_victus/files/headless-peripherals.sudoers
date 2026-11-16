@@ -1,0 +1,1 @@
+vyrus-extreme ALL=(root) NOPASSWD: /usr/local/bin/headless-peripherals

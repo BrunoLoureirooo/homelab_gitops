@@ -1,0 +1,92 @@
+---
+# The mini03 Talos worker VM on victus (design: docs/dr/mini03.md on the Talos branches).
+# The whole role is OFF until `victus_vm_enabled` is true in the inventory, so merging it
+# changes nothing on the host.
+victus_vm_enabled: false
+
+# Whether this role may start the domain. Left false so a person starts it on
+# purpose (`virsh -c qemu:///system start mini03`) after reading the plan: the first
+# boot comes up in Talos maintenance mode from the ISO below.
+victus_vm_start: false
+
+victus_vm_name: mini03
+# Adjustable. The host has 16 threads and 30 GiB; the VM yields CPU to the desktop
+# (victus_vm_slice_cpu_weight below).
+victus_vm_vcpus: 4
+victus_vm_memory_mib: 8192
+
+# --- The 512 GB NVMe: one host LVM volume group, three logical volumes -----------
+# The disk is found by SERIAL and MODEL, never by a device path or name, and every
+# check must pass before anything is read as "ours". The 1 TB system disk can never
+# match (different serial, and it holds mounted filesystems, which this role refuses).
+# The serial is a host detail and is not kept in git: it is empty here, ansible/inventory.yml
+# sets it from the vault (vault_victus_vm_disk_serial), and the role refuses to run
+# while it is empty (roles/victus_vm/tasks/disk.yml asserts it).
+victus_vm_disk_serial: ""
+victus_vm_disk_model_regex: "(?i)samsung"
+# Sanity band for the disk size in GiB (the drive is 476.9 GiB = 512 GB decimal).
+victus_vm_disk_min_size_gib: 400
+victus_vm_disk_max_size_gib: 600
+
+# DESTRUCTIVE switch, false by default. When true the role may create a GPT, one LVM
+# partition, the volume group and the logical volumes, but ONLY on a provably blank
+# disk (no partition table, no signature at all) or to finish an interrupted run of
+# itself. Any other content (the old Debian LVM vg0, a filesystem, extra partitions)
+# makes it fail with nothing changed: wipe the disk by hand, on purpose, first
+# (ansible/README.md). When false the role only checks that the layout is already there.
+victus_vm_disk_provision: false
+
+victus_vm_vg: victus512
+# Sizes in GiB. The disk is 476.9 GiB: 64 + 128 = 192 GiB, leaving 284.9 GiB; staging
+# is 283 GiB, which keeps about 1.9 GiB of the volume group unallocated (LVM metadata,
+# partition alignment and room to grow a volume later). Exact arithmetic in
+# docs/dr/mini03.md. The role checks the volumes fit before creating anything.
+victus_vm_lv_os_gib: 64 # Talos install disk: OS, containerd images, arr config (local-path)
+victus_vm_lv_backups_gib: 128 # second copy of the backups (MinIO on mini03)
+victus_vm_lv_staging_gib: 283 # torrent staging
+
+# The user QEMU runs as (Arch's libvirt package).
+victus_vm_qemu_user: libvirt-qemu
+
+# Network. The default `direct` is macvtap on the wired NIC: it does NOT change the
+# host's networking at all (no bridge, no address moved, nothing that can cut off SSH
+# or the tailnet to the host), at the price that the host itself cannot talk to the VM
+# over that NIC (the rest of the LAN and the tailnet can). Details: docs/dr/mini03.md.
+#   direct: macvtap on `victus_vm_nic` (a wired NIC; macvtap does not work on Wi-Fi).
+#   bridge: an EXISTING host bridge `victus_vm_bridge`; the role never creates one.
+#   nat:    libvirt's default NAT network (unproven for a cluster node).
+victus_vm_network_mode: direct
+victus_vm_nic: eno1
+victus_vm_bridge: br0
+# The VM's MAC address, needed so the router can hold a DHCP reservation for it
+# (direct and bridge modes). MAC addresses never go into git: set it from the vault
+# (host var `victus_vm_mac: "{{ vault_victus_vm_mac }}"`).
+victus_vm_mac: ""
+
+# Path of the Talos ISO for the first boot, from `talos/fetch-assets.sh mini03 iso`.
+# Empty once Talos is installed to the disk.
+victus_vm_install_iso: ""
+
+# Relative CPU weight of machine.slice (all VMs) against everything else in the
+# user's session (default 100): a low value makes the VM yield to games and the
+# desktop whenever the CPU is contended.
+victus_vm_slice_cpu_weight: 25
+
+# Hold a systemd sleep and lid-switch inhibitor while the VM is meant to run: a
+# suspended machine drops the worker from the cluster.
+victus_vm_inhibit_sleep: true
+
+# A virtual display (VNC) so the Talos console can be looked at: Talos draws its dashboard on a
+# screen, and without one the serial console stays blank. It is NOT a GPU and nothing is passed
+# through. It listens on the host's 127.0.0.1 only; reach it through an SSH tunnel
+# (ssh -L 5900:127.0.0.1:5900 victus, then a VNC client on localhost:5900). Set false to remove it.
+victus_vm_display: true
+victus_vm_display_port: 5900
+victus_vm_autostart: true
+
+victus_vm_packages:
+  - libvirt
+  - qemu-base
+  - edk2-ovmf
+  - dnsmasq
+  - lvm2

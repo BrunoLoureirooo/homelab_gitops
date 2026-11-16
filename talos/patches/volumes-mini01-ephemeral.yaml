@@ -1,0 +1,14 @@
+# Fallback for mini01 volumes (plan 15-02 task 3): used only if the data volume
+# layout of volumes-mini01.yaml is rejected by `talosctl validate` on the pinned
+# Talos version. PVC data then lives on EPHEMERAL under /var/local-path-provisioner
+# (wiped by a reset and restored from Velero); only the media volume is kept.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: media
+provisioning:
+  diskSelector:
+    match: '!system_disk && disk.size > @@MEDIA_MIN_GB@@u * GB && disk.size < @@MEDIA_MAX_GB@@u * GB'
+  minSize: 10GB
+  grow: true
+filesystem:
+  type: xfs

@@ -1,0 +1,12 @@
+# CI-only patch for the jobs that render with render.sh and install onto a disk
+# chosen by the committed install selector (plan 15-02): it adds only the 127.0.0.1
+# certificate SANs the port-forwarded APIs need. It deliberately sets no install
+# disk, so only the selector can pick the disk.
+machine:
+  certSANs:
+    - 127.0.0.1
+---
+apiVersion: v1alpha1
+kind: KubeAPIServerConfig
+certExtraSANs:
+  - 127.0.0.1

@@ -1,0 +1,7 @@
+---
+# 'basic' keeps CI to the high-signal rules rather than the full production
+# profile's stricter style checks - tighten to 'production' later if you want.
+profile: basic
+
+exclude_paths:
+  - _to_delete/          # untracked scratch, pending manual deletion

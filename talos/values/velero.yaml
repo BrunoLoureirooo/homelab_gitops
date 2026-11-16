@@ -1,0 +1,50 @@
+# Extra valueFile for the Talos copy of the velero app (plan 15-06).
+#
+# Added AFTER argocd/values/velero.yaml (see talos/overrides/15-06.yaml), so Helm
+# merges these maps over the repo values. argocd/values/velero.yaml itself is not
+# edited: the live k3s root app applies argocd/ and must not see a Talos change.
+#
+# 1. The homeserver schedule runs DAILY (the repo's argocd/values/velero.yaml keeps the old
+#    weekly cron for the live k3s cluster). Volumes are opt-in per Pod (annotation
+#    backup.velero.io/backup-volumes: immich-server and vaultwarden carry it), so
+#    defaultVolumesToFsBackup stays unset here exactly as in the repo schedule. The
+#    cp-reserva-bot schedule is already nightly and is not overridden.
+# 2. The backup target is the MinIO on mini02 (talos/manifests/backup-target, dataset tank/backups),
+#    reached through the in-cluster Service `velero-backup-target`. Nothing backup-related runs on
+#    victus. A list in Helm values is replaced, not merged, so the whole location is repeated.
+# 3. The Velero server runs on mini02, next to its storage. mini02 is cordoned on purpose, so the
+#    server tolerates the cordon taint. The node agent (a DaemonSet, configured separately) still
+#    runs on every node: it must run on mini01 to back up mini01's volumes.
+
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: velero-backups
+      default: true
+      config:
+        region: minio
+        s3Url: http://velero-backup-target.velero.svc.cluster.local:9000
+        s3ForcePathStyle: "true"
+
+schedules:
+  homeserver-nightly:
+    schedule: "0 10 * * *" # daily, 10:00 UTC (was Tuesdays only)
+
+nodeSelector:
+  kubernetes.io/hostname: mini02
+tolerations:
+  - key: node.kubernetes.io/unschedulable
+    operator: Exists
+    effect: NoSchedule
+
+# mini03 is tainted (tier=mobile:NoSchedule): the node agent must tolerate it to back up volumes there.
+# A list in Helm values is replaced, not merged; the node agent has no other tolerations today.
+# Pod volumes stay opt-in (backup.velero.io/backup-volumes, set by each app); the torrent staging
+# volume is not opted in.
+nodeAgent:
+  tolerations:
+    - key: node-role.homeserver/tier
+      operator: Equal
+      value: mobile
+      effect: NoSchedule

@@ -1,0 +1,10 @@
+# mini03: the Talos worker that runs as a libvirt/QEMU VM on the victus desktop
+# (docs/dr/mini03.md, ansible/roles/victus_vm). Planned for after the gate G2.
+# The guest agent lets libvirt shut the VM down cleanly; tailscale keeps it on the tailnet.
+# The qBittorrent pod's VPN sidecar (gluetun) needs the kernel tun device, which is not an extension and
+# is handled in the pod spec; see docs/dr/mini03.md, "gluetun on Talos".
+customization:
+  systemExtensions:
+    officialExtensions:
+      - siderolabs/qemu-guest-agent
+      - siderolabs/tailscale

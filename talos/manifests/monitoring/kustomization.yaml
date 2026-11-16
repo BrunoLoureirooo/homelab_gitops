@@ -1,0 +1,32 @@
+# Monitoring stack (plan docs/plans/monitoring.md): Prometheus + Alertmanager + kube-state-metrics + node-exporter
+# + Grafana. Plain manifests, no operator or CRDs. Deployed by the manual-sync Application
+# talos/apps-src/monitoring.yaml. The generated ConfigMap names carry a content hash, so a config change rolls the pods.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+resources:
+  - rbac.yaml
+  - prometheus.yaml
+  - alertmanager.yaml
+  - kube-state-metrics.yaml
+  - node-exporter.yaml
+  - grafana.yaml
+configMapGenerator:
+  - name: prometheus-config
+    files: [prometheus.yml]
+  - name: prometheus-rules
+    files: [rules-core.yml]
+  - name: alertmanager-config
+    files: [alertmanager.yml]
+  - name: grafana-datasources
+    files: [datasources.yml=grafana-datasources.yml]
+  - name: grafana-dashboard-provider
+    files: [dashboards.yml=grafana-dashboard-provider.yml]
+  - name: grafana-dash-node-exporter
+    files: [dashboards/node-exporter-full.json]
+  - name: grafana-dash-kube-state
+    files: [dashboards/kube-state-metrics-v2.json]
+  - name: grafana-dash-argocd
+    files: [dashboards/argocd.json]
+  - name: grafana-dash-cnpg
+    files: [dashboards/cloudnativepg.json]

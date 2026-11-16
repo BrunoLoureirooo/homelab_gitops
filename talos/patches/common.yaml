@@ -1,0 +1,10 @@
+# Patch applied to every node (plan 15-02).
+#
+# Intentionally NOT set here, and why:
+#   - disk encryption: deferred by the operator on 2026-10-11 (no systemDiskEncryption block)
+#   - static IP: the nodes use DHCP; reservations live outside this repository
+#   - Tailscale extension service: its own patch (patches/tailscale.yaml or the
+#     encrypted secrets/tailscale-<node>.sops.yaml)
+#   - CNI, kube-proxy, ingress: decided by plan 15-03, not by the machine config
+# (time sync is on by default, so nothing is set for it)
+machine: {}

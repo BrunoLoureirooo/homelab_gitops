@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata: {name: kube-state-metrics, namespace: monitoring, labels: {app.kubernetes.io/name: kube-state-metrics}}
+spec:
+  selector: {app.kubernetes.io/name: kube-state-metrics}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kube-state-metrics, namespace: monitoring, labels: {app.kubernetes.io/name: kube-state-metrics}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: kube-state-metrics}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: kube-state-metrics}}
+    spec:
+      serviceAccountName: kube-state-metrics
+      priorityClassName: hs-interactive
+      nodeSelector: {kubernetes.io/hostname: mini01}
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: kube-state-metrics
+          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+          args:
+            - --port=8080
+            # must match the ClusterRole in rbac.yaml exactly
+            - --resources=nodes,pods,deployments,statefulsets,daemonsets,jobs,cronjobs,persistentvolumeclaims,persistentvolumes
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 10, periodSeconds: 20}
+          resources: {requests: {cpu: 20m, memory: 64Mi}, limits: {cpu: 200m, memory: 160Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}

@@ -1,0 +1,60 @@
+# mini03 volumes, a multi-document patch picked up by render.sh as patches/volumes-<node>.yaml.
+# The VM has three virtio disks (ansible/roles/victus_vm), which are three LVM volumes on the
+# host's 512 GB NVMe:
+#
+#   vda  64 GiB   system disk: Talos, EPHEMERAL (containerd images, logs) and the `data` volume
+#                 mounted at /var/mnt/data, where the local-path provisioner keeps PVCs (arr
+#                 config). The cluster's local-path app uses /var/mnt/data/local-path on every
+#                 node that is not listed, so mini03 needs a volume named `data`, as mini01 has.
+#   vdb  128 GiB  `backups`, mounted at /var/mnt/backups: the second copy of the backups (MinIO).
+#   vdc  283 GiB  `staging`, mounted at /var/mnt/staging: torrent downloads. mini03 only.
+#
+# Disk selection is by size band (decimal GB, as in volumes-mini01.yaml): 128 GiB is about 137 GB,
+# 283 GiB about 304 GB, so the bands cannot overlap each other or the 64 GiB system disk (about
+# 69 GB, excluded by !system_disk anyway). The libvirt domain also sets each disk's serial
+# (mini03-backups, mini03-staging); the size band is used because it needs nothing from the
+# guest's device naming.
+#
+# 64 GiB system disk: after the Talos partitions about 57 GiB remain. EPHEMERAL is capped at
+# 24 GiB (the images of the arr stack, qBittorrent, gluetun and MinIO are a few GB), `data` takes
+# the rest (about 33 GiB, minimum 8 GiB).
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  diskSelector:
+    match: system_disk
+  maxSize: 24GiB
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: data
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 8GiB
+  grow: true
+filesystem:
+  type: xfs
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: backups
+provisioning:
+  diskSelector:
+    match: '!system_disk && disk.size > 130u * GB && disk.size < 145u * GB'
+  minSize: 100GiB
+  grow: true
+filesystem:
+  type: xfs
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: staging
+provisioning:
+  diskSelector:
+    match: '!system_disk && disk.size > 290u * GB && disk.size < 320u * GB'
+  minSize: 200GiB
+  grow: true
+filesystem:
+  type: xfs

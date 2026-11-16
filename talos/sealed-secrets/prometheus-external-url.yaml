@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: prometheus-external-url
+  namespace: monitoring
+spec:
+  encryptedData:
+    url: AgCmbwLCd36bL/PnmxSwII5u8sv4nSWJVLv6kSqihDbKT4heqS9EO5tCLXhKLfs3ShHhtLnc0tVsWcw9zjeJs+bvKoTc33GH2f9G1dUZroYudF8pSChRG2jR9Q5JiH9TawJBfgJpVPx7KUTMmre/hyjaFPpV2V3ls+/x25Ci6FhAnrp1M/Oy55I1AeidJ94l9smw/0j9NB8cuyeL9QnBCVdMqAwGNmpVOfn3w6Z2H7+mbMGoJ0KTKjVKdawPuMQh6IckpQa2bxm2RKurxQI6epm8wjE5+zXUPX1eaGfZzwanUE3buBAvnxe+ds8soHrMZTIxTYTl08n6UwtectjGmTEdRJfC0Mqk6ZZa3TL0nusWFQ6PwPCZq6DB5rb4j0U3FH2IUg7C6QVHHgMQeuCc5yhX6TOwnJGxk0+JmjwDgk+SWutVDTE+4auYgrlxn2f9DWg5pSOCQEDxYqnzGrlSSj/Y1EHehetwMbGJoSm19lvjyDALA5sIyrjHquzY9K8OgexCQeEHxGT+Ea8RIoeDR3vKq1ewsQZiyjo9tdMzaPq7TIf4rAT9lENLkwC7EqnW0Vyuwhy3APzh5o0A7JB2dX3HUjG6wsy92JidcAgIfCRgCNmYVT7rZT1gD1hmW0okKG/+lj91ygToCjgnbX+9sclw3ifpSEeJcG4G1598JsHGKr6ykPNRBHAtnxvP+q+HktiEQNl223ne2bY+f7bjVegQHgeaZJJs55hDrM+GYqaAKSvqRyI=
+  template:
+    metadata:
+      name: prometheus-external-url
+      namespace: monitoring

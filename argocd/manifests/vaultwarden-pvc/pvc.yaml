@@ -1,0 +1,27 @@
+# Verbatim from ~/vaultWarden/vaultwardenPVC.yaml on mini01 (fetched live via
+# SSH) - see argocd/apps/vaultwarden-pvc.yaml.
+#
+# Kept as its own tiny app, separate from apps/vaultwarden.yaml (2026-09-26:
+# moved to the bjw-s/app-template Helm chart - see that app's header) -
+# same split as Immich's immich-infra.yaml, and for the same reason: this
+# object holds real, stateful data and must never be owned or recreated by
+# whatever's managing the app's Deployment/Service/Ingress. The chart
+# references it by name only (`persistence.data.existingClaim`), never
+# creates or manages it.
+#
+# ⚠ Tracked here for visibility, but this app's syncPolicy stays manual/no
+# prune indefinitely (argocd/README.md Section 3) specifically so ArgoCD
+# never touches this object's lifecycle - it holds Vaultwarden's real vault
+# data. Sync-Options Prune=false is set explicitly below as a second
+# safeguard on top of that.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden-pvc
+  namespace: homeserver
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: topolvm-fast
+  resources: { requests: { storage: 1Gi } }

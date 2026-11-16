@@ -1,0 +1,28 @@
+# CloudNativePG operator for the Talos cluster (plan 15-06 Task 4).
+# Only needed because argocd/apps/ has no cnpg-operator Application on main (plan 01-09, the
+# k3s route, is not merged). If that app lands on main, delete this file: render-apps.sh
+# (plan 15-03) then picks it up from argocd/apps/ instead.
+#
+# Same version the live cluster runs (1.25.0, per plan 01-09); a version change is a separate
+# decision. The release manifest is applied as is through a kustomize wrapper
+# (talos/manifests/cnpg-operator). Manual sync, like every platform app here; CRDs are large
+# so the sync uses server-side apply.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-operator
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+    targetRevision: main
+    path: talos/manifests/cnpg-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cnpg-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    # Manual sync, no automated block.

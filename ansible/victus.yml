@@ -1,0 +1,32 @@
+---
+# Standalone host-config playbook for victus — takes it from a bare Arch
+# install (with SSH + sudo already working, see README "Day 0") to its target
+# host state. Safe to run on a fresh box or against the already-live one —
+# every task here is idempotent.
+#
+#   ansible-playbook victus.yml --check --diff --ask-become-pass --ask-vault-pass
+#   ansible-playbook victus.yml --ask-become-pass --ask-vault-pass
+#
+# Host config only. victus is a desktop outside the cluster (inventory.yml's
+# `standalone` group). Touches only victus.
+#
+# Roles (see README): host_config (every host), host_config_victus (this
+# specific laptop: peripherals, and a guard that keeps the retired /srv/backup
+# bind mount gone), victus_vm (optional).
+#
+# No cluster service runs on the host. Its Tailscale stays up permanently. Optional (docs/dr/mini03.md):
+# the libvirt definition of the Talos worker VM `mini03` (roles/victus_vm,
+# off by default). That role also owns the 512 GB NVMe: one LVM volume group whose three volumes
+# (OS 64 GiB, backups 128 GiB, torrent staging 283 GiB) are the VM's disks. The VM runs the arr
+# stack, qBittorrent behind a VPN sidecar and the second copy of the backups. Building that layout
+# is a destructive step behind `victus_vm_disk_provision`, false by default.
+
+- name: Provision victus (universal + victus-specific host config)
+  hosts: victus
+  become: true
+  roles:
+    - role: host_config
+    - role: host_config_victus
+    # Off until `victus_vm_enabled: true` in inventory.yml (roles/victus_vm).
+    - role: victus_vm
+      when: victus_vm_enabled | default(false) | bool

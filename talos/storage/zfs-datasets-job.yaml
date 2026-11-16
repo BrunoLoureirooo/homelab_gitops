@@ -1,0 +1,99 @@
+# Create ZFS datasets for the NAS with quotas (plan nas-completion WP2).
+#
+# Applied by hand by the operator. This Job is NOT part of any ArgoCD Application:
+# datasets are created once and then managed by ZFS, not Kubernetes.
+#
+# Before running:
+#   1. Fill in the quota values below (NAS_QUOTA, IMMICH_QUOTA, BACKUPS_QUOTA).
+#      If tank/nas quota is not yet decided, STOP and ask the operator.
+#   2. Run the command:
+#        kubectl apply -f /path/to/talos/storage/zfs-datasets-job.yaml
+#        kubectl -n kube-system wait job/zfs-datasets --for condition=complete --timeout=5m
+#        kubectl -n kube-system logs job/zfs-datasets
+#
+# Expected output: list of datasets with their quotas.
+#
+# Safety:
+#   - Uses zfs list to check existence before create (idempotent).
+#   - Never runs zfs destroy, zpool destroy, or zpool create.
+#   - Quotas are set with zfs set, which is safe to run multiple times.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: zfs-datasets
+  namespace: kube-system
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/hostname: mini02
+      # mini02 is cordoned on purpose (node.kubernetes.io/unschedulable); tolerate it like samba-nas.
+      tolerations:
+        - key: node.kubernetes.io/unschedulable
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: zfs-datasets
+          image: docker.io/library/busybox:1.37
+          securityContext:
+            privileged: true
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+
+              # Run the host's zfs and zpool commands in the host mount namespace.
+              host() { nsenter -t 1 -m -- "$@"; }
+
+              # Quotas - fill in before running
+              NAS_QUOTA="${NAS_QUOTA:-256G}"
+              IMMICH_QUOTA="${IMMICH_QUOTA:-128G}"
+              BACKUPS_QUOTA="${BACKUPS_QUOTA:-128G}"
+
+              echo "Creating datasets with quotas:"
+              echo "  tank/nas     -> $NAS_QUOTA"
+              echo "  tank/immich  -> $IMMICH_QUOTA"
+              echo "  tank/backups -> $BACKUPS_QUOTA"
+
+              # Create tank/nas if missing
+              if ! host zfs list tank/nas >/dev/null 2>&1; then
+                host zfs create tank/nas
+                echo "Created tank/nas"
+              else
+                echo "tank/nas already exists"
+              fi
+              host zfs set quota=$NAS_QUOTA tank/nas
+              echo "Set quota=$NAS_QUOTA on tank/nas"
+
+              # Create tank/immich if missing
+              if ! host zfs list tank/immich >/dev/null 2>&1; then
+                host zfs create tank/immich
+                echo "Created tank/immich"
+              else
+                echo "tank/immich already exists"
+              fi
+              host zfs set quota=$IMMICH_QUOTA tank/immich
+              echo "Set quota=$IMMICH_QUOTA on tank/immich"
+
+              # Create tank/backups if missing
+              if ! host zfs list tank/backups >/dev/null 2>&1; then
+                host zfs create tank/backups
+                echo "Created tank/backups"
+              else
+                echo "tank/backups already exists"
+              fi
+              host zfs set quota=$BACKUPS_QUOTA tank/backups
+              echo "Set quota=$BACKUPS_QUOTA on tank/backups"
+
+              echo ""
+              echo "Final datasets:"
+              host zfs list tank/nas tank/immich tank/backups
+              echo ""
+              echo "Current quotas:"
+              host zfs get quota tank/nas tank/immich tank/backups

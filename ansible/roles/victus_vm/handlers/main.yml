@@ -1,0 +1,21 @@
+---
+- name: Reload systemd units
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+# (Re)define the domain from the rendered XML. The XML has no <uuid>, so a plain `virsh define`
+# of a domain that already exists makes libvirt invent a new UUID and refuse ("already exists
+# with uuid ..."). When the domain exists, its current UUID is put into the XML first, which
+# makes this an in-place update; when it does not exist, the XML is defined as it is.
+- name: Define the mini03 VM domain
+  ansible.builtin.shell: |
+    set -eu
+    xml=/etc/libvirt/{{ victus_vm_name }}.xml
+    uuid="$(virsh -c qemu:///system domuuid {{ victus_vm_name }} 2>/dev/null || true)"
+    if [ -n "$uuid" ]; then
+      sed "s|<name>{{ victus_vm_name }}</name>|<name>{{ victus_vm_name }}</name><uuid>$uuid</uuid>|" "$xml" \
+        | virsh -c qemu:///system define /dev/stdin
+    else
+      virsh -c qemu:///system define "$xml"
+    fi
+  changed_when: true

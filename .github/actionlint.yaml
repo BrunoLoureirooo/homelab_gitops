@@ -1,0 +1,7 @@
+# actionlint config - declares the custom self-hosted runner labels used in
+# deploy.yml (one per node) so `runner-label` doesn't flag them as unknown.
+# Run locally with: actionlint .github/workflows/*.yml .github/workflows/*.yaml
+self-hosted-runner:
+  labels:
+    - mini01
+    - victus

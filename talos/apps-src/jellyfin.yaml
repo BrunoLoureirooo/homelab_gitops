@@ -1,0 +1,20 @@
+# Talos-only Application (plan 15-07). Manual sync on purpose: Jellyfin is
+# deployed deliberately during gate G2, after the restore, and is never part of
+# the automatic empty-cluster order.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jellyfin
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+    targetRevision: main
+    path: talos/manifests/jellyfin
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homeserver
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

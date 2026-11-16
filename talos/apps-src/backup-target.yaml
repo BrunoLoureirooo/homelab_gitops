@@ -1,0 +1,23 @@
+# The backup target: MinIO on mini02 (ZFS dataset tank/backups) behind the stable name
+# velero-backup-target (replaces the standalone MinIO on victus, the operator 2026-10-17).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backup-target
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+    targetRevision: main
+    path: talos/manifests/backup-target
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    # automated-sync: reviewed - one Service object, prune is off.
+    automated:
+      prune: false
+      selfHeal: true

@@ -1,0 +1,18 @@
+# mini01 node patch (plan 15-02). Tokens are filled by render.sh from
+# nodes/mini01.env (and talos/local/mini01.local.env). The install image is
+# passed on the command line from the pinned schematic, never hard-coded here,
+# and the install disk is chosen by a selector, never by a device path.
+#
+# Talos 1.14 typed documents: HostnameConfig and UnattendedInstallConfig (the
+# install disk is a CEL expression built by render.sh from DISK_TYPE/DISK_SIZE_EXPR).
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: "@@HOSTNAME@@"
+auto: "off"
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  wipe: true
+  diskSelector:
+    match: '@@DISK_MATCH@@'

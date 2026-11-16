@@ -1,0 +1,12 @@
+# Settings, filter lists and the query log: small. Local volume on mini01 (the only schedulable node).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: adguard-data
+  namespace: adguard
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: topolvm-fast
+  resources:
+    requests:
+      storage: 1Gi

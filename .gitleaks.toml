@@ -1,0 +1,19 @@
+# gitleaks' default rules, plus one exception: Sealed Secrets ciphertext.
+#
+# argocd/sealed-secrets/*.yaml hold values like `password: AgC...` - long
+# base64 encrypted with the controller's public key, safe to commit.
+# gitleaks' generic-api-key rule flags them because a key named
+# password/token/secret sits next to a high-entropy value.
+#
+# Allowlisted by the value's SHAPE (sealed-secrets ciphertext starts with
+# "Ag" and is hundreds of base64 chars - ours are 716-792), NOT by folder, so
+# a real plaintext secret is still caught anywhere, including in that folder.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Sealed Secrets ciphertext (encrypt-only, safe to commit)"
+regexes = ['''^Ag[A-Za-z0-9+/]{100,}={0,2}$''']
+# Self-test fixture of check-talos-secrets.sh: its fake `token: abcdef.0123...`
+# is the secret-looking value the guard must catch. One exact path, nothing else.
+paths = ['''^\.github/scripts/check-talos-secrets-selftest\.sh$''']

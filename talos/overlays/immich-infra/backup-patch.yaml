@@ -1,0 +1,30 @@
+# Adds continuous WAL archiving and base backups to immich-pg (CNPG 1.25, in-tree
+# barmanObjectStore; newer operator versions move this to the Barman Cloud plugin, a
+# separate decision when the operator version changes).
+#
+# Credentials: Secret `immich-pg-s3` (keys ACCESS_KEY_ID and ACCESS_SECRET_KEY), a
+# SealedSecret the operator seals in plan 15-06 Task 6 into talos/sealed-secrets/.
+# Endpoint: the stable in-cluster name for the standalone MinIO on victus
+# (talos/manifests/backup-target); bucket `immich-pg` (docs/dr/minio-standalone.md).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: immich-pg
+  namespace: homeserver
+spec:
+  backup:
+    retentionPolicy: "14d"
+    barmanObjectStore:
+      destinationPath: s3://immich-pg/
+      endpointURL: http://velero-backup-target.velero.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId:
+          name: immich-pg-s3
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: immich-pg-s3
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+      data:
+        compression: gzip

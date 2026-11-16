@@ -1,0 +1,15 @@
+# Control-plane patch (mini01). The API server certificate SANs receive the
+# endpoint host at render time (render.sh); no address is written here.
+#
+# One schedulable control plane: workloads run on mini01 as they do today. In Talos
+# 1.14 that means dropping the generated NoSchedule taint, which a patch can only do by
+# deleting the whole KubeNodeConfig document and writing it again without the taint.
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+$patch: delete
+---
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+labels:
+  node-role.kubernetes.io/control-plane: ""
+  node.kubernetes.io/exclude-from-external-load-balancers: ""

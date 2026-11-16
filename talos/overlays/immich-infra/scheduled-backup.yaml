@@ -1,0 +1,14 @@
+# Daily base backup of immich-pg at 02:30 UTC. CNPG cron has SIX fields (seconds first).
+# `immediate: false` on purpose: the first base backup is taken by hand during the cutover
+# (plan 15-07) so it lands when the operator expects it, not when Argo happens to sync.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: immich-pg-daily
+  namespace: homeserver
+spec:
+  schedule: "0 30 2 * * *"
+  backupOwnerReference: self
+  immediate: false
+  cluster:
+    name: immich-pg

@@ -1,0 +1,7 @@
+# Extra Tailscale ProxyClasses for the Talos cluster. ProxyClass is cluster-scoped, so this
+# kustomization sets no namespace. The `default` ProxyClass (the MTU fix, applied to every proxy)
+# lives in argocd/manifests/tailscale-operator and is not touched here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - nas.yaml

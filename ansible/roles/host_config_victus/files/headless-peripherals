@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# headless-peripherals off|on
+# Cuts (or restores) USB port power for the G502 mouse and the Semico keyboard,
+# so their LEDs go dark when the machine runs headless.
+#
+# `off` resolves each device's hub port from the live USB tree and disables it.
+#
+# `on` deliberately keeps no record of what was cut. A device that has been
+# powered off is no longer on the bus, so its port can no longer be looked up
+# by id -- any remembered path is the only way back, and losing that file
+# stranded the port for good. Clearing every disabled USB port instead is
+# self-healing: it recovers the port no matter how it got left that way.
+set -eu
+
+DEVICES="046d:c08b 1a2c:6b5a"   # G502 HERO mouse, Semico USB keyboard
+
+# Echo the sysfs "disable" attribute controlling the port a device sits on.
+port_file_for() {
+    local vid=${1%:*} pid=${1#*:} d dev hub port
+    for d in /sys/bus/usb/devices/*/; do
+        [ -f "$d/idVendor" ] || continue
+        [ "$(cat "$d/idVendor")" = "$vid" ] || continue
+        [ "$(cat "$d/idProduct")" = "$pid" ] || continue
+        dev=$(basename "${d%/}")        # e.g. 1-1.3.1
+        case "$dev" in *.*) ;; *) continue ;; esac   # only hub-attached devices
+        hub=${dev%.*}                   # 1-1.3
+        port=${dev##*.}                 # 1
+        echo "/sys/bus/usb/devices/$hub:1.0/$hub-port$port/disable"
+        return 0
+    done
+    return 1
+}
+
+case "${1:-}" in
+  off)
+    for id in $DEVICES; do
+        if f=$(port_file_for "$id") && [ -w "$f" ]; then
+            echo 1 > "$f"
+        else
+            # Loud, not silent: an unresolved device used to look identical to success.
+            echo "${0##*/}: warning: no USB port found for $id; left powered" >&2
+        fi
+    done
+    ;;
+  on)
+    for f in /sys/bus/usb/devices/*/*-port*/disable; do
+        [ -e "$f" ] || continue
+        [ "$(cat "$f")" = "1" ] || continue
+        echo 0 > "$f"
+    done
+    ;;
+  *)
+    echo "usage: ${0##*/} off|on" >&2; exit 1 ;;
+esac

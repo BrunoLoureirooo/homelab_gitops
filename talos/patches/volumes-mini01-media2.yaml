@@ -1,0 +1,12 @@
+# mini01's second Toshiba (added by render.sh only when the disk inventory has a media2 serial). Formatted
+# by Talos and mounted at /var/mnt/media2; what uses it is decided separately.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: media2
+provisioning:
+  diskSelector:
+    match: '@@MEDIA2_MATCH@@'
+  minSize: 10GB
+  grow: true
+filesystem:
+  type: xfs

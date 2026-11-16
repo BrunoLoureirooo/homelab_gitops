@@ -1,0 +1,41 @@
+# Moved 2026-09-26 from raw manifests to the bjw-s/app-template Helm chart -
+# see argocd/values/vaultwarden.yaml's header for the full reasoning and the
+# one real trade-off (a one-time Deployment recreate on first sync, not data
+# loss - PVC and Ingress are unaffected). Paired with apps/vaultwarden-pvc.yaml
+# for the PVC itself, which this chart never touches.
+#
+# Phase 4 per argocd/README.md Section 6: highest-stakes data (the password
+# vault), migrated last, once the pattern is proven on Velero/MinIO and
+# Immich first. Do NOT sync until then, and even then only after reading
+# `argocd app diff vaultwarden` in full - unlike this repo's other adoptions,
+# a clean diff isn't the bar to clear here (see values file header). Confirm
+# the real running image tag first too - see argocd/README.md's audit
+# addendum for the unresolved 1.33.2 vs 1.37.2-alpine discrepancy.
+#
+# vaultwarden-admin (the ADMIN_TOKEN secret) still needs sealing - see
+# argocd/sealed-secrets/README.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vaultwarden
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: "5.2.1" # confirmed current via `helm search repo bjws/app-template --versions`, 2026-09-26
+      helm:
+        valueFiles:
+          - $values/argocd/values/vaultwarden.yaml
+    - repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homeserver
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    # Manual sync, no automated block, permanently for this app specifically
+    # per Section 3 - it's the highest-stakes data in the whole migration.

@@ -1,0 +1,132 @@
+---
+# The UNIVERSAL layer - applied to every host this repo manages (victus and mini04),
+# whatever its role: Tailscale's repo/package/service (and, only if asked, its
+# login), timezone, SSH hardening and the CI deploy key. See ansible/README.md.
+#
+# Tailscale repo/package/service:
+#
+# Debian doesn't ship Tailscale in its default repos - on a truly bare Debian
+# host (mini04), `package: name=tailscale` below fails until this repo exists.
+# This replicates exactly what `curl -fsSL https://tailscale.com/install.sh |
+# sh` does for apt (keyring + sources list, keyed off the running release),
+# just as two idempotent tasks instead of a manual one-off, so a bare Debian
+# box no longer needs that manual step from README "Day 0". Arch ships
+# Tailscale in its official repos, so victus never hits this.
+- name: Debian only - fetch the Tailscale apt repo signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/debian/{{ ansible_distribution_release }}.noarmor.gpg"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+  when: ansible_os_family == "Debian"
+
+- name: Debian only - add the Tailscale apt repo
+  ansible.builtin.get_url:
+    url: "https://pkgs.tailscale.com/stable/debian/{{ ansible_distribution_release }}.tailscale-keyring.list"
+    dest: /etc/apt/sources.list.d/tailscale.list
+    mode: "0644"
+  register: host_config_tailscale_repo
+  when: ansible_os_family == "Debian"
+
+# Deliberately a task, not a handler (ansible-lint's no-handler suggestion
+# doesn't fit here): the very next task needs the refreshed cache
+# immediately, on the SAME run, to find the tailscale package in the repo
+# just added - a handler would only fire after every task in the play
+# finishes, too late for "Ensure tailscale package is installed" below.
+- name: Debian only - refresh apt cache after adding the Tailscale repo  # noqa: no-handler
+  ansible.builtin.apt:
+    update_cache: true
+  when: host_config_tailscale_repo is changed
+
+- name: Ensure tailscale package is installed
+  ansible.builtin.package:
+    name: tailscale
+    state: present
+
+- name: Ensure tailscaled is enabled and running
+  ansible.builtin.service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+# Both of today's hosts are already authed and connected to the tailnet,
+# and by default this stays a manual, interactive step: `tailscale up` is a
+# per-device OAuth flow tied to a personal account, so running it unattended
+# by default risks a re-auth prompt hanging the play, or silently changing
+# flags (--ssh, --advertise-routes, etc.) neither host currently has set. If
+# a node ever needs to (re)join, that's a deliberate manual command:
+# `sudo tailscale up [flags]`.
+#
+# The one exception, opt-in only: a genuinely bare box (a real from-scratch
+# bootstrap, or a third node later) has no session to reuse at all, so there's
+# nothing "unattended" to silently change. Passing -e
+# tailscale_authkey=tskey-... (a reusable or ephemeral key from the Tailscale
+# admin console; never commit one) makes this task join it non-interactively
+# - skipped entirely, as a true no-op, whenever the var isn't set (the
+# default, and today's reality for victus).
+#
+# Note this can't be the FIRST thing that reaches a brand-new box: inventory.yml
+# addresses both hosts by their MagicDNS name, so Ansible has no way to run
+# this task at all until the node is already reachable somehow - either
+# joined by hand first (ansible/README.md Day 0, step 3), or by pointing this
+# same playbook at the box's current LAN IP for one bootstrap run
+# (-e ansible_host=<lan-ip>) before switching back to the inventory's
+# MagicDNS name for every run after. See ansible/README.md Day 0 for both paths.
+- name: Check whether this node is already logged in to Tailscale
+  ansible.builtin.command: tailscale status --json
+  register: host_config_tailscale_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: tailscale_authkey is defined
+
+- name: Join the tailnet non-interactively (only when an authkey was supplied and not already logged in)
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - up
+      - "--authkey={{ tailscale_authkey }}"
+      - "--hostname={{ inventory_hostname }}"
+  no_log: true
+  # Always a real change whenever this actually runs - the `when:` below
+  # only lets it fire while the node isn't logged in yet, so reaching this
+  # task at all means going from logged-out to logged-in.
+  changed_when: true
+  when:
+    - tailscale_authkey is defined
+    - host_config_tailscale_status.stdout | default('') | length > 0
+    - (host_config_tailscale_status.stdout | from_json).BackendState != "Running"
+
+# One timezone on every managed host, so local-time reasoning anywhere in this
+# project is unambiguous.
+- name: Ensure timezone is Europe/Lisbon
+  community.general.timezone:
+    name: Europe/Lisbon
+
+# SSH password-auth hardening - universal: any host this repo brings up should have
+# password auth disabled from day one. See ansible/README.md.
+- name: Harden sshd - disable password auth (pubkey only)
+  ansible.builtin.copy:
+    src: 50-harden.conf
+    dest: /etc/ssh/sshd_config.d/50-harden.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload sshd
+
+- name: Validate sshd config before any reload is allowed to fire
+  ansible.builtin.command: sshd -t
+  changed_when: false
+  # If this fails, Ansible stops the play for this host right here and the
+  # notified "reload sshd" handler never runs - the bad drop-in is on disk
+  # but sshd keeps running under its last-known-good config until you fix
+  # it and re-run. Pubkey auth was never touched either way, so normal
+  # key-based login keeps working throughout.
+
+# deploy.yml runs from a GitHub-hosted runner and SSHes in with a dedicated deploy key, so every
+# managed host has to accept it. A brand-new host needs this added by hand once (you can't SSH
+# in to add the key you'd need to SSH in); from then on this task keeps it there.
+- name: Authorize the control node's CI runner key
+  ansible.posix.authorized_key:
+    user: "{{ ansible_user }}"
+    key: "{{ host_config_ci_runner_pubkey }}"
+    state: present

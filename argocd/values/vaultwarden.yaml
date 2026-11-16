@@ -1,0 +1,97 @@
+# Fed to the bjw-s/app-template chart via argocd/apps/vaultwarden.yaml's
+# multi-source $values reference.
+#
+# Built 2026-09-26, moving Vaultwarden off raw manifests
+# (argocd/manifests/vaultwarden/ - now deleted) onto the same common chart
+# already used for Immich (immich-app/immich-charts wraps this exact chart
+# per-component, which is why argocd/values/immich.yaml's schema looks
+# identical to this one). Reproduces the applied manifest
+# (~/vaultWarden/vaultwarden.yaml on mini01) field-for-field, except the
+# image tag, which is the live one (1.37.2-alpine, not the file's stale
+# 1.33.2-alpine - resolved against the running Deployment 2026-09-26), same env
+# vars, same priorityClassName, same resources, same liveness probe, same
+# PVC (referenced by name, never owned by this chart - see
+# argocd/manifests/vaultwarden-pvc/), same Ingress.
+#
+# ⚠ ONE real, unavoidable difference: this chart's Deployment selector uses
+# its own app.kubernetes.io/* labels, not the live `app: vaultwarden` label
+# the hand-written manifest used. Selectors are immutable, and common charts
+# like this one don't expose selector overrides (the whole point of the
+# pattern is that the chart fully owns its own labeling) - so unlike every
+# other adoption in this repo, `argocd app diff` will NOT come back clean
+# here, and syncing this app WILL delete+recreate the Deployment once. That
+# is not data loss: the PVC is untouched (referenced by name, this chart
+# never creates or owns it) and the Service gets regenerated with matching
+# selectors in the same sync, so routing keeps working right after the pod
+# restarts. It IS a real, if brief, outage of the password vault. Sync this
+# deliberately (a quiet moment, not mid-use), and verify a Velero backup
+# still runs clean afterward, same as any other phase in Section 8.
+controllers:
+  vaultwarden:
+    type: deployment
+    replicas: 1
+    strategy: Recreate
+    pod:
+      priorityClassName: hs-critical
+      # Velero file-system backup is opt-in per volume: without this, the vault's
+      # PVC is silently skipped. The 2026-09-26 move to this chart dropped the
+      # annotation (no backup after 2026-09-22). Must match persistence.data.
+      annotations:
+        backup.velero.io/backup-volumes: data
+    containers:
+      main:
+        image:
+          repository: vaultwarden/server
+          # Confirmed live 2026-09-26: the running Deployment is
+          # vaultwarden/server:1.37.2-alpine. The old applied manifest's
+          # 1.33.2 was stale - syncing it would have downgraded the vault
+          # (Vaultwarden's DB migrations only go forward).
+          tag: 1.37.2-alpine
+        env:
+          SIGNUPS_ALLOWED: "false"
+          DOMAIN: "https://vaultwarden.taile54e41.ts.net"
+          ADMIN_TOKEN:
+            valueFrom:
+              secretKeyRef:
+                name: vaultwarden-admin
+                key: token
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /alive
+                port: 80
+              initialDelaySeconds: 20
+              periodSeconds: 30
+        resources:
+          requests: { cpu: 50m, memory: 64Mi }
+          limits: { cpu: 500m, memory: 256Mi }
+
+service:
+  main:
+    controller: vaultwarden
+    ports:
+      http:
+        port: 80
+
+ingress:
+  main:
+    className: tailscale
+    hosts:
+      - host: vaultwarden
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["vaultwarden"]
+
+persistence:
+  data:
+    existingClaim: vaultwarden-pvc
+    globalMounts:
+      - path: /data

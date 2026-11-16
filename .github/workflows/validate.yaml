@@ -1,0 +1,57 @@
+name: Validate manifests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'argocd/**'
+  pull_request:
+    paths:
+      - 'argocd/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: helm lint local charts
+        run: |
+          for chart in argocd/charts/*/; do
+            if [ -f "$chart/Chart.yaml" ]; then helm lint "$chart"; fi
+          done
+
+      - name: kubeconform raw manifests
+        run: |
+          # Exclude charts/ (Helm template syntax, not standalone YAML) and
+          # values/ (Helm values files - no apiVersion/kind, not K8s objects)
+          # - only apps/ (Application CRs, unknown-schema-skipped) and
+          # manifests/ (plain K8s YAML) are real manifests to check here.
+          files=$(find argocd -name '*.yaml' -not -path '*/charts/*' -not -path '*/values/*')
+          if [ -n "$files" ]; then
+            # $files is meant to word-split into multiple filename arguments
+            # shellcheck disable=SC2086
+            kubeconform -strict -ignore-missing-schemas -summary $files
+          else
+            echo "No raw manifests to validate yet."
+          fi
+
+      # Both of these are repo-specific safety nets, not generic manifest
+      # validation - see each script's own header for exactly what it
+      # guards against and why.
+      - name: guardrail - no unreviewed automated sync policies
+        run: bash .github/scripts/check-argocd-safety.sh
+
+      - name: guardrail - no raw Secret objects committed
+        run: bash .github/scripts/check-no-raw-secrets.sh

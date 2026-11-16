@@ -1,0 +1,19 @@
+# Talos-only Argo Application for actual-budget. Manual sync on purpose: you merge the PR, then sync it
+# by hand in Argo. (talos/apps/actual-budget.yaml is generated from this file by talos/render-apps.sh.)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: actual-budget
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+    targetRevision: main
+    path: talos/manifests/actual-budget
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homeserver
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

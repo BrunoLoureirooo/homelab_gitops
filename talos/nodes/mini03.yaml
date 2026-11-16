@@ -1,0 +1,25 @@
+# mini03 node patch. Tokens are filled by render.sh from nodes/mini03.env.
+# mini03 is the worker VM on the victus desktop, a machine that is also used by its owner. It
+# runs only what is pinned to it: the arr stack, the torrent client with its VPN sidecar and the
+# backup replica. Those pods select it by label and tolerate its taint; nothing else lands there
+# (no "unschedulable"-style toleration is needed, unlike mini02, because this is a real taint
+# and not a cordon).
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: "@@HOSTNAME@@"
+auto: "off"
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  wipe: true
+  diskSelector:
+    match: '@@DISK_MATCH@@'
+---
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+labels:
+  node-role.homeserver/tier: mobile
+  node-role.homeserver/pool: media-backup
+taints:
+  node-role.homeserver/tier: mobile:NoSchedule

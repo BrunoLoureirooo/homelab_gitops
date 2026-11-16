@@ -1,0 +1,90 @@
+# Image: servercontainers/samba, smbd only. Configuration style (environment
+# variables ACCOUNT_<user>, UID_<user>, SAMBA_VOLUME_CONFIG_<share>) is the one
+# the image documents; the CI job nas-pod.sh proves it against a real client.
+# Keep SAMBA_IMAGE in step with talos/storage/pins.env.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: samba-nas
+  labels:
+    app.kubernetes.io/name: samba-nas
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: samba-nas
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: samba-nas
+    spec:
+      # Pinned to the NAS node. CI overrides this with a patch (ci/).
+      nodeSelector:
+        kubernetes.io/hostname: mini02
+      # mini02 is cordoned on purpose (only pods that must live there tolerate that).
+      tolerations:
+        - key: node.kubernetes.io/unschedulable
+          operator: Exists
+          effect: NoSchedule
+      initContainers:
+        - name: share-dirs
+          image: docker.io/library/busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              for s in shared paperless; do
+                mkdir -p "/shares/nas/$s"
+                chown 1000:1000 "/shares/nas/$s"
+              done
+              chown 1000:1000 /shares/immich-data
+          volumeMounts:
+            - name: nas
+              mountPath: /shares/nas
+            - name: immich-data
+              mountPath: /shares/immich-data
+      containers:
+        - name: samba
+          image: docker.io/servercontainers/samba:smbd-only-a3.24.1-s4.23.8-r0@sha256:03bdd347ddb54577e5be499ca98c456e5f36d7d80c33819f46849ec2413b7b04
+          env:
+            - name: ACCOUNT_homelab
+              valueFrom:
+                secretKeyRef:
+                  name: samba-nas-credentials
+                  key: credential
+            - name: UID_homelab
+              value: "1000"
+            # General shared folder for files (tank/nas, quota 256G).
+            - name: SAMBA_VOLUME_CONFIG_shared
+              value: "[shared]; path=/shares/nas/shared; valid users = homelab; guest ok = no; read only = no; browseable = yes"
+            - name: SAMBA_VOLUME_CONFIG_paperless
+              value: "[paperless]; path=/shares/nas/paperless; valid users = homelab; guest ok = no; read only = no; browseable = yes"
+            - name: SAMBA_VOLUME_CONFIG_immich
+              value: "[immich]; path=/shares/immich-data; valid users = homelab; guest ok = no; read only = no; browseable = yes"
+          ports:
+            - name: smb
+              containerPort: 445
+              hostPort: 445
+          readinessProbe:
+            tcpSocket:
+              port: smb
+            periodSeconds: 10
+          volumeMounts:
+            - name: nas
+              mountPath: /shares/nas
+            - name: immich-data
+              mountPath: /shares/immich-data
+      volumes:
+        # ZFS datasets of the mini02 pool `tank`. The host mounts the pool at /var/mnt/tank
+        # (the kubelet only sees host mounts under /var/mnt); quotas live on the datasets.
+        - name: nas
+          hostPath:
+            path: /var/mnt/tank/nas
+            type: Directory
+        - name: immich-data
+          hostPath:
+            path: /var/mnt/tank/immich
+            type: Directory

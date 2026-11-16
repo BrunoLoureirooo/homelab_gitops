@@ -1,0 +1,15 @@
+# Verbatim from ~/immich/immich-ingress.yaml on mini01 (fetched live via SSH)
+# - see argocd/apps/immich-infra.yaml. Not part of the immich-charts Helm
+# release itself, applied separately by hand originally.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: immich, namespace: homeserver }
+spec:
+  ingressClassName: tailscale
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: immich-server, port: { number: 2283 } } }
+  tls: [{ hosts: ["immich"] }]

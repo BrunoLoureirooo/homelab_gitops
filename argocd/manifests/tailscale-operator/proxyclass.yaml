@@ -1,0 +1,26 @@
+# Default ProxyClass for every Tailscale Ingress/Service proxy
+# (values/tailscale-operator.yaml sets proxyConfig.defaultProxyClass).
+#
+# Why: this cluster runs flannel over tailscale0 (MTU 1280), so pod
+# interfaces get MTU 1230. The proxies run their own tailscaled (userspace)
+# whose WireGuard packets are up to 1360 bytes - too big for eth0, so bulk
+# transfers stall and retransmit. Measured 2026-09-26: ~20 KB/s through
+# every proxy (Immich full-size photos and deletes failing, ArgoCD's 1.3 MB
+# bundle not finishing in 60s) versus a 69 KB file in 17ms straight from the
+# pod. Proxy logs: "now using ... mtu=1360".
+#
+# Fix, per https://github.com/tailscale/tailscale/issues/16820: shrink the
+# proxies' tunnel MTU so the encrypted packet fits. 1150 + ~80 bytes of
+# WireGuard/UDP/IP overhead = 1230, the pod MTU. If the pod MTU ever changes
+# (check /sys/class/net/eth0/mtu in a proxy pod), change this with it.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: default
+spec:
+  statefulSet:
+    pod:
+      tailscaleContainer:
+        env:
+          - name: TS_DEBUG_MTU
+            value: "1150"

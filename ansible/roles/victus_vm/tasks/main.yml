@@ -1,0 +1,200 @@
+---
+# Defines the libvirt/QEMU VM that runs victus's Talos worker `mini03`. Applied only when
+# `victus_vm_enabled` is true (victus.yml). It checks (and, only on request, builds) the 512 GB
+# disk's LVM layout, sets up the hypervisor and defines the domain; the Talos machine config and
+# everything inside the VM belong to the Talos configs in talos/ (node mini03), not to Ansible.
+#
+# Safety rules, same spirit as the storage roles: the 512 GB disk is found by serial and model
+# and only built on a provably blank disk with `victus_vm_disk_provision: true`; the 1 TB system
+# disk is never touched; it never creates or reshapes a host bridge or any host networking, never
+# resizes a volume, and only starts the VM when `victus_vm_start` says so. The host's Tailscale is
+# not touched.
+
+# --- Preconditions: fail early, with the fix ------------------------------------
+
+- name: Check that the host exposes KVM
+  ansible.builtin.stat:
+    path: /dev/kvm
+  register: victus_vm_kvm
+
+- name: Assert KVM is available
+  ansible.builtin.assert:
+    that:
+      - victus_vm_kvm.stat.exists
+    fail_msg: >-
+      /dev/kvm is missing: enable AMD-V (SVM) in the firmware and load the kvm_amd
+      module before enabling the mini03 VM.
+
+- name: Assert the network settings are usable
+  ansible.builtin.assert:
+    that:
+      - victus_vm_network_mode in ['direct', 'bridge', 'nat']
+      - victus_vm_network_mode == 'nat' or victus_vm_mac is regex('^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$')
+    fail_msg: >-
+      victus_vm_network_mode must be direct, bridge or nat, and in direct and bridge mode
+      victus_vm_mac must be a MAC address (set it from the vault; it is never committed) so the
+      router can hold a DHCP reservation for the VM.
+
+- name: Check that the wired NIC exists (direct mode)
+  ansible.builtin.stat:
+    path: "/sys/class/net/{{ victus_vm_nic }}"
+  register: victus_vm_nic_dev
+  when: victus_vm_network_mode == 'direct'
+
+- name: Check that the NIC is not wireless (macvtap does not work on Wi-Fi)
+  ansible.builtin.stat:
+    path: "/sys/class/net/{{ victus_vm_nic }}/wireless"
+  register: victus_vm_nic_wireless
+  when: victus_vm_network_mode == 'direct'
+
+- name: Assert the NIC is usable for macvtap (never modified here)
+  ansible.builtin.assert:
+    that:
+      - victus_vm_nic_dev.stat.exists
+      - not victus_vm_nic_wireless.stat.exists
+    fail_msg: >-
+      The NIC {{ victus_vm_nic }} does not exist or is wireless. Set victus_vm_nic to the wired port.
+      This role does not touch the NIC's configuration either way.
+  when: victus_vm_network_mode == 'direct'
+
+- name: Check that the host bridge exists (bridge mode)
+  ansible.builtin.stat:
+    path: "/sys/class/net/{{ victus_vm_bridge }}"
+  register: victus_vm_bridge_dev
+  when: victus_vm_network_mode == 'bridge'
+
+- name: Assert the host bridge exists (never created here)
+  ansible.builtin.assert:
+    that:
+      - victus_vm_bridge_dev.stat.exists
+    fail_msg: >-
+      The host bridge {{ victus_vm_bridge }} does not exist. This role never creates one:
+      moving the only wired NIC of a desktop onto a bridge is a manual step that can cut off
+      remote access, which is why the default is direct (macvtap). See docs/dr/mini03.md.
+  when: victus_vm_network_mode == 'bridge'
+
+# --- Hypervisor -----------------------------------------------------------------
+
+- name: Ensure the virtualization packages are installed
+  ansible.builtin.package:
+    name: "{{ victus_vm_packages }}"
+    state: present
+  register: victus_vm_pkgs
+
+# In a dry run (--check) a missing package is only simulated, so libvirt's service and its
+# /etc/libvirt directory do not exist yet. Tasks that need them skip in that one case and run
+# normally on a real run (and on any dry run once the packages are installed).
+- name: Note whether libvirt would only be installed by this run (dry run)
+  ansible.builtin.set_fact:
+    victus_vm_hypervisor_pending: "{{ ansible_check_mode and victus_vm_pkgs is changed }}"
+
+- name: Ensure libvirtd is enabled and running
+  ansible.builtin.service:
+    name: libvirtd
+    enabled: true
+    state: started
+  when: not victus_vm_hypervisor_pending
+
+- name: Ensure the machine.slice drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/machine.slice.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# libvirt's own <cputune><shares> only weights VMs against each other. What lets a
+# game win over the VM is the weight of the whole machine.slice against the
+# desktop's user.slice.
+- name: Make the VM yield to the desktop when the CPU is contended
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/machine.slice.d/10-victus-vm.conf
+    content: |
+      # Managed by Ansible (roles/victus_vm)
+      [Slice]
+      CPUWeight={{ victus_vm_slice_cpu_weight }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd units
+
+# --- The 512 GB disk ------------------------------------------------------------
+# Read-only unless victus_vm_disk_provision is true and the disk is blank (disk.yml).
+
+- name: Check (and, only on request, build) the 512 GB disk's LVM layout
+  ansible.builtin.include_tasks: disk.yml
+
+# --- The domain -----------------------------------------------------------------
+
+- name: Render the domain definition
+  ansible.builtin.template:
+    src: domain.xml.j2
+    dest: "/etc/libvirt/{{ victus_vm_name }}.xml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Define the mini03 VM domain
+  when: not victus_vm_hypervisor_pending
+
+- name: Check whether the domain is already defined
+  ansible.builtin.command: "virsh -c qemu:///system dominfo {{ victus_vm_name }}"
+  register: victus_vm_dominfo
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Define the domain when it does not exist yet
+  ansible.builtin.command: "virsh -c qemu:///system define /etc/libvirt/{{ victus_vm_name }}.xml"
+  when: victus_vm_dominfo.rc != 0 and not ansible_check_mode
+  changed_when: true
+
+- name: Read the domain's state again
+  ansible.builtin.command: "virsh -c qemu:///system dominfo {{ victus_vm_name }}"
+  register: victus_vm_dominfo_now
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Set the domain's autostart flag
+  ansible.builtin.command: >-
+    virsh -c qemu:///system autostart {{ victus_vm_name }}
+    {{ '' if victus_vm_autostart | bool else '--disable' }}
+  when:
+    - victus_vm_dominfo_now.rc == 0
+    - victus_vm_dominfo_now.stdout is not search('Autostart:\s+' ~ ('enable' if victus_vm_autostart | bool else 'disable'))
+  changed_when: true
+
+- name: Start the domain (only when victus_vm_start is true)
+  ansible.builtin.command: "virsh -c qemu:///system start {{ victus_vm_name }}"
+  when:
+    - victus_vm_start | bool
+    - victus_vm_dominfo_now.rc == 0
+    - victus_vm_dominfo_now.stdout is not search('State:\s+running')
+  changed_when: true
+
+# --- Keep the machine awake while the VM runs -----------------------------------
+
+- name: Install the sleep inhibitor unit
+  ansible.builtin.template:
+    src: awake.service.j2
+    dest: /etc/systemd/system/victus-vm-awake.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd units
+  when: victus_vm_inhibit_sleep | bool
+  register: victus_vm_awake_unit
+
+- name: Apply unit changes before enabling the inhibitor
+  ansible.builtin.meta: flush_handlers
+
+# In a dry run the unit file above is only simulated, so systemd does not know the service
+# yet: skip enabling it in that one case (same idea as victus_vm_hypervisor_pending).
+- name: Ensure the sleep inhibitor is enabled and running
+  ansible.builtin.systemd:
+    name: victus-vm-awake.service
+    enabled: true
+    state: started
+  when:
+    - victus_vm_inhibit_sleep | bool
+    - not (ansible_check_mode and victus_vm_awake_unit is changed)

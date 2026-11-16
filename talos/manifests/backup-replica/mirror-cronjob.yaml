@@ -1,0 +1,129 @@
+# Daily mirror of the primary backup target (MinIO on mini02) into the replica (MinIO on mini03).
+# Runs at 13:00 UTC, after the 10:00 UTC homeserver-nightly Velero schedule and the 02:30 Postgres
+# base backup, so a day's backups are copied the same day.
+#
+# Steps, as init containers because the mc image has no shell (so none is needed):
+#   1. size-gate  refuse to run when the backups volume is at or above 80% (the alert: the Job fails
+#                 and shows up as a failed Job; nothing is copied or deleted)
+#   2-4. one `mc mirror` per bucket, primary -> replica, --overwrite --remove (the replica equals the
+#                 primary, including deletions at Velero's TTL expiry; drop --remove to keep everything
+#                 and let the replica grow, docs/dr/mini03.md)
+#   main          prints the replica's size for the largest bucket
+#
+# Credentials: ONE Secret, backup-replica-mirror, whose two keys are mc's own alias variables
+# (MC_HOST_primary and MC_HOST_replica, each http://ACCESS:SECRET@host:9000). The primary user is
+# READ-ONLY on the three buckets, so the mirror can never change the primary. Created and sealed by
+# The operator (README.md); no real value is in the repository.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-replica-mirror
+  namespace: velero
+spec:
+  schedule: "0 13 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 14400
+      template:
+        spec:
+          restartPolicy: Never
+          nodeSelector:
+            kubernetes.io/hostname: mini03
+          tolerations:
+            - key: node-role.homeserver/tier
+              operator: Equal
+              value: mobile
+              effect: NoSchedule
+          initContainers:
+            - name: size-gate
+              image: docker.io/library/busybox:1.37
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  use="$(df -P /data | awk 'NR==2 { gsub("%", "", $5); print $5 }')"
+                  echo "backups volume use: ${use}%"
+                  if [ "$use" -ge 80 ]; then
+                    echo "the backups volume is at or above 80%: not mirroring (docs/dr/mini03.md)" >&2
+                    exit 1
+                  fi
+              volumeMounts:
+                - {name: data, mountPath: /data, readOnly: true}
+            - name: mirror-velero-backups
+              image: cgr.dev/chainguard/minio-client@sha256:d8a93c5d335509ff353774eefec8f82fa2a2a975e800139702232d8be3dbe6b9
+              args: ["mirror", "--overwrite", "--remove", "primary/velero-backups", "replica/velero-backups"]
+              env:
+                - {name: MC_CONFIG_DIR, value: /tmp/mc}
+              envFrom:
+                - secretRef:
+                    name: backup-replica-mirror
+              securityContext:
+                runAsUser: 65532
+                runAsGroup: 65532
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+            - name: mirror-litestream
+              image: cgr.dev/chainguard/minio-client@sha256:d8a93c5d335509ff353774eefec8f82fa2a2a975e800139702232d8be3dbe6b9
+              args: ["mirror", "--overwrite", "--remove", "primary/litestream", "replica/litestream"]
+              env:
+                - {name: MC_CONFIG_DIR, value: /tmp/mc}
+              envFrom:
+                - secretRef:
+                    name: backup-replica-mirror
+              securityContext:
+                runAsUser: 65532
+                runAsGroup: 65532
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+            - name: mirror-immich-pg
+              image: cgr.dev/chainguard/minio-client@sha256:d8a93c5d335509ff353774eefec8f82fa2a2a975e800139702232d8be3dbe6b9
+              args: ["mirror", "--overwrite", "--remove", "primary/immich-pg", "replica/immich-pg"]
+              env:
+                - {name: MC_CONFIG_DIR, value: /tmp/mc}
+              envFrom:
+                - secretRef:
+                    name: backup-replica-mirror
+              securityContext:
+                runAsUser: 65532
+                runAsGroup: 65532
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          containers:
+            - name: report
+              image: cgr.dev/chainguard/minio-client@sha256:d8a93c5d335509ff353774eefec8f82fa2a2a975e800139702232d8be3dbe6b9
+              args: ["du", "replica/velero-backups"]
+              env:
+                - {name: MC_CONFIG_DIR, value: /tmp/mc}
+              envFrom:
+                - secretRef:
+                    name: backup-replica-mirror
+              securityContext:
+                runAsUser: 65532
+                runAsGroup: 65532
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: data
+              hostPath:
+                path: /var/mnt/backups
+                type: Directory
+            - name: tmp
+              emptyDir: {}

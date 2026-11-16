@@ -1,0 +1,76 @@
+# Prometheus on mini02 (plan docs/plans/monitoring.md 4.3, decision D5 default). mini02 is cordoned, so the
+# Pod tolerates the cordon taint and is pinned to the node. The TSDB is on a topolvm-fast (local-path) volume;
+# local-path does not enforce the size, so the cap is the --storage.tsdb.retention.size flag.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: prometheus-data, namespace: monitoring}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: topolvm-fast
+  resources: {requests: {storage: 10Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: prometheus, namespace: monitoring, labels: {app.kubernetes.io/name: prometheus}}
+spec:
+  selector: {app.kubernetes.io/name: prometheus}
+  ports: [{name: http, port: 9090, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: prometheus, namespace: monitoring, labels: {app.kubernetes.io/name: prometheus}}
+spec:
+  replicas: 1
+  strategy: {type: Recreate} # RWO volume: never two pods at once
+  selector: {matchLabels: {app.kubernetes.io/name: prometheus}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: prometheus}}
+    spec:
+      serviceAccountName: prometheus
+      priorityClassName: hs-critical
+      nodeSelector: {kubernetes.io/hostname: mini01}
+      tolerations:
+        - {key: node.kubernetes.io/unschedulable, operator: Exists, effect: NoSchedule}
+      securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: prometheus
+          image: quay.io/prometheus/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=30d
+            - --storage.tsdb.retention.size=7GB
+            - --web.listen-address=:9090
+            - --web.external-url=$(PROM_EXTERNAL_URL)
+            - --web.route-prefix=/
+          # URL comes from a SealedSecret so the tailnet name stays out of the repo. Not optional: if the
+          # secret is missing the pod fails with CreateContainerConfigError rather than get a literal $(PROM_EXTERNAL_URL).
+          env:
+            - name: PROM_EXTERNAL_URL
+              valueFrom: {secretKeyRef: {name: prometheus-external-url, key: url}}
+          ports: [{name: http, containerPort: 9090}]
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /-/healthy, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
+          startupProbe: {httpGet: {path: /-/ready, port: http}, periodSeconds: 10, failureThreshold: 60} # WAL replay can take minutes
+          resources: {requests: {cpu: 150m, memory: 384Mi}, limits: {cpu: "1", memory: 768Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus/prometheus.yml, subPath: prometheus.yml}
+            - {name: rules, mountPath: /etc/prometheus/rules}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - {name: config, configMap: {name: prometheus-config}}
+        - {name: rules, configMap: {name: prometheus-rules}}
+        - {name: data, persistentVolumeClaim: {claimName: prometheus-data}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: {name: prometheus, namespace: monitoring, labels: {app.kubernetes.io/name: prometheus}}
+spec:
+  ingressClassName: tailscale
+  rules:
+    - http:
+        paths:
+          - {path: /, pathType: Prefix, backend: {service: {name: prometheus, port: {number: 9090}}}}
+  tls:
+    - hosts: [prometheus]

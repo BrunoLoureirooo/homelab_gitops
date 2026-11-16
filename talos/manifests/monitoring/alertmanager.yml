@@ -1,0 +1,42 @@
+# Delivery (plan decisions D1 and D4): every alert goes to one Discord channel through a webhook; the Watchdog
+# heartbeat goes to a healthchecks.io ping URL, and healthchecks.io notifies Discord when the pings stop.
+# Neither URL is in git: both are read from files of the sealed Secret alertmanager-notifiers (keys
+# discord-webhook-url, healthchecks-ping-url), mounted at /etc/alertmanager/secrets (see alertmanager.yaml).
+# Seal it with the command in the header of alertmanager.yaml and list it in talos/sealed-secrets/kustomization.yaml.
+global:
+  resolve_timeout: 5m
+route:
+  receiver: discord
+  group_by: [alertname, instance]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    - matchers: [alertname = "Watchdog"]
+      receiver: healthchecks # dead-man's switch (D4): ping every ~5 min, healthchecks.io alerts when pings stop
+      group_by: [alertname]
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 5m
+    - matchers: [severity = "critical"]
+      receiver: discord
+      repeat_interval: 4h
+    - matchers: [severity = "info"]
+      receiver: "null"
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url_file: /etc/alertmanager/secrets/discord-webhook-url
+        send_resolved: true
+  - name: healthchecks
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/healthchecks-ping-url
+        send_resolved: false
+  - name: "null"
+inhibit_rules:
+  - source_matchers: [severity = "critical"]
+    target_matchers: [severity = "warning"]
+    equal: [alertname, instance]
+  - source_matchers: [alertname = "NodeDown"]
+    target_matchers: [alertname =~ "TargetDown|ProbeFailed|PodStuckPending"]
+    equal: [node]

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Recording stand-in for kubectl, used only by test/jobs/freeze-selftest.sh. It
+# logs every `scale` call to $FAKE_LOG and answers reads from $FAKE_KUBE_DIR.
+set -euo pipefail
+args="$*"
+case "$args" in
+  *" scale "*)
+    echo "$args" >>"$FAKE_LOG"
+    echo "scaled"
+    ;;
+  *"get ns"*) echo "namespace/default" ;;
+  *"-n argocd get statefulset argocd-application-controller"*) cat "$FAKE_KUBE_DIR/argocd.json" ;;
+  *"-n homeserver get deployment,statefulset"*) cat "$FAKE_KUBE_DIR/homeserver.json" ;;
+  *"-n cp-reserva-bot get deployment,statefulset"*) cat "$FAKE_KUBE_DIR/cp-bot.json" ;;
+  *"get deployment -A"*) cat "$FAKE_KUBE_DIR/all-deploy.json" ;;
+  *"get pods -A"*) cat "$FAKE_KUBE_DIR/pods.json" ;;
+  *)
+    echo "fake kubectl: unexpected call: $args" >&2
+    exit 98
+    ;;
+esac

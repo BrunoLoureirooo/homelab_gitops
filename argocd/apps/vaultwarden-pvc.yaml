@@ -1,0 +1,24 @@
+# Split out of apps/vaultwarden.yaml on 2026-09-26 when that app moved to a
+# Helm chart (bjw-s/app-template) - see its header. This one object (the
+# real vault data) stays a plain manifest, referenced by name from the
+# chart's values (`persistence.data.existingClaim: vaultwarden-pvc`), never
+# owned or created by the chart. Same split as apps/immich-infra.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vaultwarden-pvc
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+    targetRevision: main
+    path: argocd/manifests/vaultwarden-pvc
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homeserver
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    # Manual sync, no automated block, permanently for this app specifically
+    # per Section 3 - it's the actual password vault data.

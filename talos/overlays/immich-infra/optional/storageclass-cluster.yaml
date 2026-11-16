@@ -1,0 +1,10 @@
+# Enable only when talos/FINDINGS.md says STORAGE_VERDICT=local-path (plan 15-03).
+# Replaces the TopoLVM class on the CNPG volume.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: immich-pg
+  namespace: homeserver
+spec:
+  storage:
+    storageClass: local-path

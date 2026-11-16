@@ -1,0 +1,21 @@
+---
+# One scenario of tests/victus_vm_disk_state.yml: feed the role's state decision the facts
+# the real commands would give, and check the verdict.
+- name: "Feed the role's reads for scenario '{{ case.name }}'"
+  ansible.builtin.set_fact:
+    victus_vm_disk_sigs: "{{ case.sigs }}"
+    victus_vm_disk_nparts: "{{ case.nparts }}"
+    victus_vm_disk_p1_fs: "{{ case.fs }}"
+    victus_vm_disk_p1_sigs: "{{ case.psigs }}"
+    victus_vm_disk_p1_vg: "{{ case.vg }}"
+    victus_vm_disk_lvs: "{{ case.lvs }}"
+
+- name: Run the state decision
+  ansible.builtin.include_tasks: ../roles/victus_vm/tasks/disk_state.yml
+
+- name: "The verdict for '{{ case.name }}' is '{{ case.want }}'"
+  ansible.builtin.assert:
+    that:
+      - victus_vm_disk_state == case.want
+    fail_msg: "scenario '{{ case.name }}': got '{{ victus_vm_disk_state }}', wanted '{{ case.want }}'"
+    success_msg: "scenario '{{ case.name }}' -> {{ victus_vm_disk_state }}"

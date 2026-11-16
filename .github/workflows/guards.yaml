@@ -1,0 +1,57 @@
+name: Repo guards
+
+# Runs every .github/scripts/check-*.sh on every PR. Later plans add a new
+# check-*.sh file and it is picked up here without editing this workflow.
+# GitHub-hosted runner only, read-only token, no secrets.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  guards:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: some guards run `git diff origin/main...HEAD`.
+          fetch-depth: 0
+
+      - name: Require origin/main on pull requests
+        if: github.event_name == 'pull_request'
+        run: git rev-parse --verify origin/main
+
+      - name: Install actionlint (checksum-verified)
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" actionlint
+          sudo install "$RUNNER_TEMP/actionlint" /usr/local/bin/actionlint
+
+      - name: shellcheck
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck
+
+      - name: actionlint
+        run: actionlint
+
+      - name: Run every check script
+        run: |
+          failed=0
+          for s in .github/scripts/check-*.sh; do
+            if bash "$s"; then
+              echo "GUARD $(basename "$s") OK"
+            else
+              echo "GUARD $(basename "$s") FAIL"
+              failed=1
+            fi
+          done
+          exit "$failed"

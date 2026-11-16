@@ -1,0 +1,20 @@
+# CI-only (plan 15-04, layout L2): the data volume on the SYSTEM disk, with
+# EPHEMERAL capped so room remains for it (same shape as patches/volumes-mini01.yaml).
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  diskSelector:
+    match: system_disk
+  maxSize: 12GiB
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: data
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 5GiB
+  grow: true
+filesystem:
+  type: xfs

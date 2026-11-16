@@ -1,0 +1,26 @@
+# Samba NAS for mini02 (plan 15-05). Lives in talos/apps-src/, NOT in
+# argocd/apps/: the live `root` app auto-applies argocd/apps/ and this app must
+# not exist on the current k3s cluster. The Talos app set is generated from the
+# sources by plan 15-03 (talos/apps/).
+#
+# Manual sync only, no automated block: it serves real data, so the first sync
+# is diffed and approved (same pattern as the other adopted apps).
+# The Secret `samba-nas-credentials` comes from talos/sealed-secrets/ (sealed by
+# The operator, plan 15-05 Task 4); this app does not create it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: samba-nas
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BrunoLoureirooo/homelab_gitops
+    targetRevision: main
+    path: talos/manifests/samba-nas
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nas
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

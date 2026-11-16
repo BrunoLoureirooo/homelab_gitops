@@ -1,0 +1,28 @@
+# Base from ~/immich/immich-library-pvc.yaml on mini01 (fetched live via
+# SSH) - see argocd/apps/immich-infra.yaml.
+#
+# ⚠ SIZE DISCREPANCY, resolved in favor of the more recent fact: the applied
+# manifest on disk still says 32Gi, but a 2026-09-18 kubectl-verified audit
+# recorded this PVC already "grown online from 32Gi to 64Gi" (TopoLVM PVCs
+# are online-resizable). Since PVC storage requests can only increase, never
+# decrease, applying the stale 32Gi value here would just fail against a
+# live 64Gi PVC (the API rejects a shrink), not roll it back - so this file
+# is set to 64Gi as the more likely current truth. CONFIRM with
+# `kubectl get pvc immich-library-pvc -n homeserver` before syncing and
+# correct this number if it's drifted further since.
+#
+# Tracked here for visibility only - this app's syncPolicy stays manual/no
+# prune indefinitely (argocd/README.md Section 3) specifically so ArgoCD
+# never touches this object's lifecycle; it holds the actual photo library.
+# Sync-Options Prune=false is set explicitly below as a second safeguard.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-library-pvc
+  namespace: homeserver
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: topolvm-fast
+  resources: { requests: { storage: 64Gi } }

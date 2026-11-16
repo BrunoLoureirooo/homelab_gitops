@@ -1,0 +1,10 @@
+---
+# Installed with: ansible-galaxy install -r requirements.yml (from ansible/).
+
+collections:
+  # host_config role: timezone + homebrew modules.
+  - name: community.general
+    version: ">=7.0.0"
+  # host_config role: mount module.
+  - name: ansible.posix
+    version: ">=1.5.0"

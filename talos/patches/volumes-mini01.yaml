@@ -1,0 +1,51 @@
+# mini01 volumes (plan 15-02 task 3), a multi-document patch.
+#
+# data:  a volume on the SYSTEM disk mounted at /var/mnt/data for the PVCs (the
+#        local-path provisioner of plan 15-03 uses /var/mnt/data/local-path).
+#        EPHEMERAL is capped so free space remains for it.
+# media: the Toshiba, formatted by Talos and mounted at /var/mnt/media. The
+#        selector EXCLUDES the system disk (system_disk) so media can never land
+#        on it, and matches by a size band of the real disk (about 320 GB;
+#        render.sh fills @@MEDIA_MIN_GB@@ and @@MEDIA_MAX_GB@@ from the node file
+#        or talos/local/mini01.local.env; CI overrides them).
+#
+# media2 (patches/volumes-mini01-media2.yaml) is added when the inventory has a media2 serial: mini01
+# has two identical 320 GB Toshibas (2026-10-17), both formatted by Talos, and each is
+# pinned by serial number from the encrypted inventory secrets/disks-mini01.sops.yaml.
+#
+# Decision (the operator, 2026-10-12): the Toshiba is treated as empty and Talos formats
+# it. Plan 15-07 task 3 has the operator re-check it read-only first and copy anything
+# found.
+#
+# If this layout is rejected by `talosctl validate` on the pinned version, the
+# volumes job falls back to volumes-mini01-ephemeral.yaml (media only, PVC data
+# on EPHEMERAL) and reports DATA_PATH accordingly.
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  diskSelector:
+    match: system_disk
+  maxSize: 100GiB
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: data
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 20GiB
+  grow: true
+filesystem:
+  type: xfs
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: media
+provisioning:
+  diskSelector:
+    match: '!system_disk && disk.size > @@MEDIA_MIN_GB@@u * GB && disk.size < @@MEDIA_MAX_GB@@u * GB@@MEDIA_EXTRA@@'
+  minSize: 10GB
+  grow: true
+filesystem:
+  type: xfs

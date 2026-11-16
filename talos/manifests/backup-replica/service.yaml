@@ -1,0 +1,14 @@
+# The stable in-cluster name of the second backup copy. Restoring from it (docs/dr/mini03.md): add a
+# Velero BackupStorageLocation with s3Url http://velero-backup-replica.velero.svc.cluster.local:9000.
+apiVersion: v1
+kind: Service
+metadata:
+  name: velero-backup-replica
+  namespace: velero
+spec:
+  selector:
+    app: minio-replica
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3

@@ -1,0 +1,24 @@
+# __APP__ on the tailnet only, served by the Tailscale operator (same as jellyfin and immich).
+# The tailnet hostname comes from tls.hosts. Delete this file (and its line in kustomization.yaml)
+# to keep the app cluster-internal.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: __APP__
+  labels:
+    app.kubernetes.io/name: __APP__
+spec:
+  ingressClassName: tailscale
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: __APP__
+                port:
+                  number: __PORT__
+  tls:
+    - hosts:
+        - __APP__

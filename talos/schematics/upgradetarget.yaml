@@ -1,0 +1,7 @@
+# Plan 15-04: the base schematic plus one harmless official extension. The
+# find-upgrade-data job upgrades a running node to this installer to prove an
+# extension can be added through an upgrade without losing the data volume.
+customization:
+  systemExtensions:
+    officialExtensions:
+      - siderolabs/intel-ucode

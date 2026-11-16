@@ -1,0 +1,11 @@
+# Enable only when talos/FINDINGS.md says STORAGE_VERDICT=local-path (plan 15-03).
+# Replaces the TopoLVM class on the Immich library claim. The class of an existing PVC
+# cannot change, so this only matters for a fresh claim (the restored data arrives through
+# the Velero change-storage-class map instead).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: immich-library-pvc
+  namespace: homeserver
+spec:
+  storageClassName: local-path

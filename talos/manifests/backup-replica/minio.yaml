@@ -1,0 +1,78 @@
+# The second copy of the backups: a single-node MinIO on mini03 (the Talos worker VM on victus,
+# docs/dr/mini03.md), storing on the Talos user volume `backups` (128 GiB, xfs, mounted by the node at
+# /var/mnt/backups; /var/mnt is the one place the Talos kubelet sees host mounts). It is filled by the
+# mirror CronJob next to this file from the primary MinIO on mini02 (talos/manifests/backup-target).
+#
+# NOT DEPLOYED UNTIL THE NODE EXISTS: the Application (talos/apps-src/backup-replica.yaml) is manual
+# sync, and everything here is pinned to mini03. Do not sync it before mini03 is Ready and the Secrets
+# named in README.md are sealed.
+#
+# The root credentials are NOT in the repository: the Secret `minio-replica-root`
+# (MINIO_ROOT_USER / MINIO_ROOT_PASSWORD) is sealed by the operator (README.md).
+# mini03 is tainted for the pods that belong there; this Pod selects the node and tolerates the taint.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio-replica
+  namespace: velero
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: minio-replica
+  template:
+    metadata:
+      labels:
+        app: minio-replica
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: mini03
+      tolerations:
+        - key: node-role.homeserver/tier
+          operator: Equal
+          value: mobile
+          effect: NoSchedule
+      initContainers:
+        # the volume is root-owned; MinIO runs as the image's non-root user
+        - name: own-data
+          image: docker.io/library/busybox:1.37
+          command: ["sh", "-c", "chown 65532:65532 /data"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      containers:
+        - name: minio
+          # Chainguard, the same pin as the primary (talos/manifests/backup-target/minio.yaml).
+          image: cgr.dev/chainguard/minio@sha256:c93745c56fccdaf0e5dcb88999a96a65a136428beb045ef5d546255a80d747a7
+          args: ["server", "/data", "--address", ":9000", "--console-address", "127.0.0.1:9001"]
+          envFrom:
+            - secretRef:
+                name: minio-replica-root
+          ports:
+            - {name: s3, containerPort: 9000}
+          resources:
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          readinessProbe:
+            httpGet: {path: /minio/health/ready, port: s3}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /minio/health/live, port: s3}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/mnt/backups
+            type: Directory

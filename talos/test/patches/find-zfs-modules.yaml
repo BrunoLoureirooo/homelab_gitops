@@ -1,0 +1,4 @@
+# CI-only (plan 15-04): load the ZFS kernel module from the zfs system extension.
+apiVersion: v1alpha1
+kind: KernelModuleConfig
+name: zfs

@@ -1,0 +1,6 @@
+---
+# The retired backup bind mount (removed 2026-11-04), kept only so the role can
+# make sure the fstab entry stays gone:
+#   /home/srv-backup  /srv/backup  none  bind  0 0
+host_config_victus_backup_src: /home/srv-backup
+host_config_victus_backup_mount: /srv/backup

@@ -1,0 +1,10 @@
+# SOPS creation rule for the Talos secrets (plan 15-02). Only the age PUBLIC
+# recipient belongs here; the private key stays on an offline medium (decision
+# D3, see secrets/README.md).
+#
+# The recipient below is a marked placeholder. check-talos-config.sh accepts it
+# only while secrets/secrets.sops.yaml does not exist; replace it with the public
+# line printed by `age-keygen -y <keyfile>` before the first real encryption.
+creation_rules:
+  - path_regex: (^|.*/)secrets/.*\.sops\.yaml$
+    age: age1unjlcpxpch9meeh3sflez8fhz8h3ucpa4wfqgz7rqyeteyry8ydsq035yl

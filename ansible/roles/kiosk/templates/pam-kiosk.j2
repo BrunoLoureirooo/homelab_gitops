@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+# Minimal PAM stack for kiosk.service (PAMName=kiosk), from the cage wiki:
+# registers the session with systemd-logind. Nobody authenticates through it.
+auth           required        pam_unix.so nullok
+account        required        pam_unix.so
+session        required        pam_unix.so
+session        required        pam_systemd.so

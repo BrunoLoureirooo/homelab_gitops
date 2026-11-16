@@ -1,0 +1,29 @@
+# Copy this to vault.yml, fill in the REAL values, then encrypt it in place -
+# never commit an unencrypted copy. See ansible/README.md.
+#
+#   cp group_vars/all/vault.yml.example group_vars/all/vault.yml
+#   # edit the vars below with real values
+#   ansible-vault encrypt group_vars/all/vault.yml
+
+# The mini03 VM's MAC address (roles/victus_vm, direct or bridge mode). Needed so the
+# router can hold a DHCP reservation for the VM; MAC addresses never go into git.
+# Use a locally administered address, for example 52:54:00:xx:xx:xx.
+vault_victus_vm_mac: "REPLACE_WITH_A_52:54:00_MAC_FOR_THE_VM"
+
+# Serial number of the 512 GB NVMe that roles/victus_vm builds the mini03 volume group on
+# (`lsblk -dno NAME,SERIAL` on victus). The role finds the disk by this serial only, and
+# refuses to run while it is empty.
+vault_victus_vm_disk_serial: "REPLACE_WITH_THE_512GB_NVME_SERIAL"
+
+# sudo (become) password for the victus desktop. ansible/inventory.yml reads it as
+# ansible_become_password for victus; CI uses the GitHub Environment secret instead.
+vault_become_password_victus: "REPLACE_WITH_VICTUS_SUDO_PASSWORD"
+
+# sudo (become) password for mini04, the display host. ansible/inventory.yml reads it
+# as ansible_become_password for mini04.
+vault_become_password_mini04: "REPLACE_WITH_MINI04_SUDO_PASSWORD"
+
+# What mini04's kiosk screen shows (roles/kiosk). It contains the tailnet name, so it
+# stays in the vault. Dashboard form:
+#   https://grafana.<tailnet-name>.ts.net/d/<uid>/<slug>?kiosk&refresh=1m&theme=dark
+vault_kiosk_url: "REPLACE_WITH_THE_GRAFANA_DASHBOARD_URL"

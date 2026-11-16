@@ -1,0 +1,33 @@
+# Values for the cp-reserva-bot chart (apps/cp-reserva-bot.yaml). Every key
+# and its default is documented in the chart's values.yaml in the bot repo.
+# No image tag: the chart version picks the image (see the app's header).
+
+# SealedSecret argocd/sealed-secrets/cp-reserva-bot.yaml, from the env file
+# the bot ran with by hand: CP_PASS_NUMBER, CP_DOC_TYPE, CP_DOC_NUMBER,
+# FRIEND_PHONE, CP_EMAIL, CP_PASSWORD. Since chart 0.2.0 it is only imported
+# once, on the first start that has no settings.json on the volume; after that
+# the page's settings win and the Secret is ignored. Drop it (and this line)
+# once the page has run the bot for a while.
+existingSecret: cp-reserva-bot
+
+# The setup/status page, tailnet only through the Tailscale operator (never
+# Funnel): https://cp-reserva-bot.<tailnet>.ts.net. The operator's default
+# ProxyClass (the MTU fix) applies on its own.
+ingress:
+  enabled: true
+  className: tailscale
+  host: cp-reserva-bot
+
+# The schedule (trips, skipDates, preferredSeats) lives in the SealedSecret
+# talos/sealed-secrets/cp-reserva-bot-schedule.yaml, sealed from a local file;
+# the chart mounts it at /config. Edit it by resealing, not here.
+configExistingSecret: cp-reserva-bot-schedule
+
+# /data holds the linked WhatsApp session. topolvm-fast is vg0 on mini01, so
+# this also pins the bot to mini01.
+persistence:
+  storageClass: topolvm-fast
+  size: 100Mi
+  annotations:
+    # Same safeguard as the other PVCs here: a prune never deletes it.
+    argocd.argoproj.io/sync-options: Prune=false

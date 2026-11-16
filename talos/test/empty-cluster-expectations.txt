@@ -1,0 +1,40 @@
+# Expected state of every Application after the empty-cluster order of
+# talos/bootstrap-argocd.sh --ci (plan 15-03 task 4): <app> <sync> <health>.
+# `*` accepts any value for that column. One line per Application in talos/apps.
+#
+# STATUS: PREDICTED, not yet taken from a green run (no CI could run when this
+# file was written). The first green `empty-cluster` job prints the real states
+# as `APP <name> <sync> <health>` lines; replace the predictions below with them
+# and keep a `# evidence:` comment for every surprise. Never loosen a line to
+# make a failing run pass without writing the reason here.
+#
+# app                    sync    health
+namespaces               Synced  Healthy
+cluster-baseline         Synced  Healthy
+sealed-secrets           Synced  Healthy
+cert-manager             Synced  Healthy
+local-path-provisioner   Synced  Healthy
+metrics-server           Synced  Healthy
+sealed-secrets-set      Synced  *       # the CI key cannot decrypt the repo's SealedSecrets
+tailscale-operator       *       *       # needs the OAuth client secret (a sealed secret)
+velero                   *       *       # no real backup location credentials in CI
+immich-infra             *       *       # needs the CNPG CRDs (plan 15-06 adds the operator) and the restored PVC
+immich                   *       *       # needs the database and the library volume
+vaultwarden-pvc          *       *       # WaitForFirstConsumer: Pending until a pod mounts it
+vaultwarden              *       *       # needs its sealed admin secret
+cp-reserva-bot           *       *       # needs its sealed secret and a chart from ghcr.io
+# Added when the stack was integrated (PREDICTED like the lines above, replace with real states
+# from the first green `empty-cluster` run):
+adguard-home             *       *       # manual sync; needs the sealed adguard-admin Secret and the Tailscale operator for its two tailnet devices
+backup-target            *       *       # MinIO on mini02 behind velero-backup-target; needs the minio-root Secret and the ZFS dataset
+backup-replica           *       *       # manual sync; MinIO on mini03 (the victus worker VM), pinned to a node that does not exist yet
+csi-driver-smb           *       *       # manual sync; the SMB CSI driver for the mini01 apps, nothing in CI mounts a share
+intel-gpu-plugin          *       *       # manual sync; the Intel GPU device plugin, only mini01 has a GPU and CI has none
+cnpg-operator            *       *       # manual sync, large CRDs applied server-side; not in the automatic order
+jellyfin                 *       *       # manual sync on purpose (deployed during gate G2, never automatic)
+samba-nas                *       *       # manual sync; serves real data, needs the ZFS pool and a PVC
+zfs-scrub                *       *       # manual sync; CronJob for monthly scrub, needs the ZFS pool
+monitoring               *       *       # manual sync; needs the monitoring namespace, sealed grafana-secrets and a node that tolerates the mini02 cordon taint
+talos-sealed-secrets     Synced  *       # a valid no-op until the Talos SealedSecrets are sealed; the CI key cannot decrypt them
+tailscale-proxyclasses   *       *       # manual sync; extra Tailscale ProxyClasses, needs the tailscale-operator CRDs
+actual-budget            *       *       # manual sync; no Secret until the OIDC step; the Coverflex importer inside it is at 0 replicas

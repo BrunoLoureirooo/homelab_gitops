@@ -1,0 +1,10 @@
+# Tailscale extension service config for CI renders and the extension find jobs:
+# NO auth key. Production renders replace this document with the SOPS-encrypted
+# secrets/tailscale-<node>.sops.yaml, a complete ExtensionServiceConfig of the
+# same name that adds the auth key. Two documents of the same name never both
+# apply, which is why render.sh uses one or the other.
+apiVersion: v1alpha1
+kind: ExtensionServiceConfig
+name: tailscale
+environment:
+  - TS_HOSTNAME=@@HOSTNAME@@

@@ -1,0 +1,41 @@
+---
+# Decides which state the 512 GB disk is in from what disk.yml read (wipefs, lsblk, blkid,
+# pvs and lvs output). Its own file so the decision that guards the data can be tested on
+# its own with fake outputs: ansible/tests/victus_vm_disk_state.yml.
+#
+# Needs: victus_vm_disk_sigs (whole-disk wipefs output), victus_vm_disk_nparts,
+# victus_vm_disk_p1_fs (blkid TYPE of partition 1), victus_vm_disk_p1_sigs (signature count on
+# partition 1), victus_vm_disk_p1_vg (VG of the PV on partition 1, '' when none) and
+# victus_vm_disk_lvs (list of LV names in our VG).
+# Sets victus_vm_disk_state: provisioned, blank, resumable or unexpected.
+#
+# provisioned: one partition, an LVM PV in our VG, exactly our three LVs.
+# blank:       nothing at all on the disk.
+# resumable:   our own interrupted run: one partition that is empty or already our PV, with
+#              only some of our LVs.
+# unexpected:  everything else. Never touched.
+- name: Work out which state the disk is in
+  vars:
+    victus_vm_disk_want_lvs: ["mini03-os", "mini03-backups", "mini03-staging"]
+    victus_vm_disk_extra_lvs: "{{ victus_vm_disk_lvs | difference(victus_vm_disk_want_lvs) }}"
+    victus_vm_disk_missing_lvs: "{{ victus_vm_disk_want_lvs | difference(victus_vm_disk_lvs) }}"
+    victus_vm_disk_p1_ours: >-
+      {{ victus_vm_disk_p1_fs == 'LVM2_member' and victus_vm_disk_p1_vg in ['', victus_vm_vg] }}
+    victus_vm_disk_p1_empty: >-
+      {{ victus_vm_disk_p1_fs == '' and victus_vm_disk_p1_sigs | int == 0 }}
+  ansible.builtin.set_fact:
+    victus_vm_disk_state: >-
+      {{ 'provisioned'
+           if (victus_vm_disk_nparts | int == 1
+               and victus_vm_disk_p1_fs == 'LVM2_member'
+               and victus_vm_disk_p1_vg == victus_vm_vg
+               and victus_vm_disk_missing_lvs | length == 0
+               and victus_vm_disk_extra_lvs | length == 0)
+         else 'blank'
+           if (victus_vm_disk_sigs | trim | length == 0 and victus_vm_disk_nparts | int == 0)
+         else 'resumable'
+           if (victus_vm_disk_nparts | int == 1
+               and (victus_vm_disk_p1_ours | bool or victus_vm_disk_p1_empty | bool)
+               and victus_vm_disk_extra_lvs | length == 0
+               and (victus_vm_disk_p1_vg == victus_vm_vg or victus_vm_disk_lvs | length == 0))
+         else 'unexpected' }}

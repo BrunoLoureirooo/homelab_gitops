@@ -1,0 +1,24 @@
+# Argo CD web UI on the tailnet only, at https://argocd.<your-tailnet>.ts.net (the old Debian cluster
+# used the same pattern). Tailscale terminates HTTPS and forwards plain HTTP, so argocd-server
+# must run with server.insecure=true (install-argocd.sh sets it). The hostname comes from
+# tls.hosts, like the immich and vaultwarden Ingresses. Applied by install-argocd.sh.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  ingressClassName: tailscale
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - argocd

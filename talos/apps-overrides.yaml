@@ -1,0 +1,50 @@
+# Differences between the live k3s app set (argocd/apps/) and the Talos app set
+# (talos/apps/), read by talos/render-apps.sh. Edit this file or talos/apps-src/,
+# never talos/apps/ (generated; check-talos-apps.sh fails on a hand edit).
+#
+# storage     local-path (default) or topolvm. Set from the 15-04 verdict
+#             (STORAGE_VERDICT= in talos/FINDINGS.md). The storage-bind job fails
+#             when this value and the verdict disagree; it never guesses.
+#               local-path: the StorageClass is STILL named topolvm-fast but is
+#                           provided by rancher.io/local-path, so every PVC, Helm
+#                           value and Velero backup keeps its class name and a
+#                           restore is a plain restore (no class mapping).
+#               topolvm:    the topolvm app is re-included and the StorageClass is
+#                           left as in argocd/manifests/cluster-baseline.
+# exclude     apps of argocd/apps that do not exist on the Talos cluster.
+#               minio: runs standalone on victus (plan 15-06), outside the cluster.
+#               topolvm: dropped unless storage is topolvm.
+# extra_valuefiles   app name -> list of repo paths appended to the valueFiles of
+#             its chart sources (as $values/<path>); the repo's own values files
+#             are not edited.
+# path        app name -> a replacement `path` for its single git source.
+# rename      app name -> the Application name (and file name) it gets on Talos. The
+#             live `secrets` app is `sealed-secrets-set` here, because talos/.gitignore
+#             ignores any file called secrets.yaml.
+# manifest_copies    app name -> a generated copy of a manifest directory with the
+#             Talos changes applied (render-apps.sh knows the transformation).
+storage: local-path
+
+exclude: []
+
+extra_valuefiles:
+  immich:
+    - talos/values/immich.yaml # the library claim is the SMB volume on mini02
+  velero:
+    - talos/values/velero.yaml # daily homeserver schedule, stable backup target name
+  vaultwarden:
+    - talos/values/vaultwarden.yaml # Litestream sidecar + restore-on-empty init container
+
+rename:
+  secrets: sealed-secrets-set
+
+path:
+  cluster-baseline: talos/manifests/cluster-baseline
+  # the overlay (no old local immich-library-pvc, the SMB library claim instead, WAL archiving);
+  # talos/overrides/15-06.yaml announced this key but it was never merged here
+  immich-infra: talos/manifests/immich-infra
+
+manifest_copies:
+  cluster-baseline:
+    from: argocd/manifests/cluster-baseline
+    to: talos/manifests/cluster-baseline

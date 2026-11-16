@@ -1,0 +1,187 @@
+name: Deploy (GitHub-hosted + Tailscale)
+
+# After the Talos gate G2 the cluster is deployed by "Talos deploy" and mini01 is no longer
+# managed by Ansible. What remains is the victus host (Arch desktop and backup host), only by
+# hand, and mini04 (Debian kiosk display host):
+#   - victus: `workflow_dispatch` only, so a merge never changes it.
+#   - mini04: `workflow_dispatch`, plus a `push` to main limited to the paths mini04's
+#     playbook reads (path filter below, proved by .github/scripts/check-deploy-paths.sh).
+#     The push applies for real; the safety gate is the PR review, as mini01's job had it.
+# `mode=check` previews against the live host (--check --diff); `mode=apply` runs for real.
+#
+# Both jobs run on GitHub-hosted runners that join the tailnet for the length of the job
+# (tag:ci, ephemeral node) and SSH to the host by its MagicDNS short name. Never
+# `pull_request`/`pull_request_target`: the job holds the vault password and a deploy key
+# that can reach live hosts (check-workflow-safety.sh rule G enforces this).
+on:
+  push:
+    branches: [main]
+    # Only what mini04.yml (host_config + kiosk) reads. Docs and *.example files are never
+    # read by a playbook, so they must not trigger a live apply. Order matters: the last
+    # matching pattern wins.
+    paths:
+      - 'ansible/mini04.yml'
+      - 'ansible/roles/kiosk/**'
+      - 'ansible/roles/host_config/**'
+      - 'ansible/inventory.yml'
+      - 'ansible/group_vars/all/**'
+      - '!ansible/**/*.md'
+      - '!ansible/**/*.example'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which host to deploy (a push to main always runs mini04 only)"
+        type: choice
+        options: [victus, mini04]
+        default: victus
+      mode:
+        description: "check (preview, --check --diff) or apply (the real run)"
+        type: choice
+        options: [check, apply]
+        default: check
+
+permissions:
+  contents: read
+
+jobs:
+  victus:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'victus' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: victus # holds victus's own ANSIBLE_BECOME_PASSWORD
+    defaults:
+      run:
+        working-directory: ansible
+    env:
+      ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+      ANSIBLE_BECOME_PASSWORD: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
+      ANSIBLE_PRIVATE_KEY_FILE: ~/.ssh/ci_deploy
+      ANSIBLE_ARGS: >-
+        --vault-password-file=${{ github.workspace }}/.github/scripts/ansible-vault-pass.sh
+        --become-password-file=${{ github.workspace }}/.github/scripts/ansible-become-pass.sh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # ping makes the action fail fast if a host is unreachable. It takes MagicDNS names,
+      # so it also proves the short names resolve on this runner.
+      - name: Join the tailnet
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: victus
+
+      - name: Check the MagicDNS short name resolves
+        run: getent hosts victus
+
+      # Pinned, so a new ansible release can never change what a merge does to a live host.
+      - name: Install Ansible
+        run: pipx install --include-deps 'ansible==14.6.0'
+
+      - name: Install role + collections
+        run: ansible-galaxy install -r requirements.yml
+
+      # Dedicated deploy key (its public half is host_config_ci_runner_pubkey in
+      # inventory.yml). known_hosts is filled by ssh-keyscan over the tailnet: WireGuard
+      # already authenticated the peer, so the scanned host key is the real one; ansible.cfg
+      # keeps host_key_checking on.
+      - name: Set up SSH
+        env:
+          CI_DEPLOY_SSH_KEY: ${{ secrets.CI_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CI_DEPLOY_SSH_KEY" > ~/.ssh/ci_deploy
+          chmod 600 ~/.ssh/ci_deploy
+          ssh-keyscan -H victus > ~/.ssh/known_hosts
+          [ -s ~/.ssh/known_hosts ] || { echo "ssh-keyscan returned no host key for victus" >&2; exit 1; }
+
+      - name: Set preview flags for a manual mode=check run
+        if: ${{ inputs.mode == 'check' }}
+        run: echo "PREVIEW_FLAGS=--check --diff" >> "$GITHUB_ENV"
+
+      # Host config only. victus is not a k3s node (see inventory.yml's
+      # `standalone` group) and runs no service-layer roles.
+      - name: Provision victus (host config)
+        run: |
+          # ANSIBLE_ARGS/PREVIEW_FLAGS are meant to word-split into multiple --flags
+          # shellcheck disable=SC2086
+          ansible-playbook victus.yml $ANSIBLE_ARGS $PREVIEW_FLAGS
+
+  # mini04 is reached over the tailnet by its MagicDNS short name (inventory.yml) with the
+  # CI deploy key, which host_config authorizes (host_config_ci_runner_pubkey). sudo uses
+  # ansible_become_password from the vault, so there is no per-host environment and no
+  # become-password file.
+  mini04:
+    if: ${{ github.event_name == 'push' || inputs.target == 'mini04' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: deploy-mini04
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: ansible
+    env:
+      ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+      MINI04_USER: ${{ vars.MINI04_USER }} # repo variable: mini04's login, kept out of git
+      ANSIBLE_PRIVATE_KEY_FILE: ~/.ssh/ci_deploy
+      ANSIBLE_ARGS: >-
+        --vault-password-file=${{ github.workspace }}/.github/scripts/ansible-vault-pass.sh
+    steps:
+      - name: Require MINI04_USER
+        run: |
+          if [ -z "$MINI04_USER" ]; then
+            echo "repo variable MINI04_USER is not set" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # ping makes the action fail fast if a host is unreachable. It takes MagicDNS names,
+      # so it also proves the short names resolve on this runner.
+      - name: Join the tailnet
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: mini04
+
+      - name: Check the MagicDNS short name resolves
+        run: getent hosts mini04
+
+      # Pinned, so a new ansible release can never change what a merge does to a live host.
+      - name: Install Ansible
+        run: pipx install --include-deps 'ansible==14.6.0'
+
+      - name: Install role + collections
+        run: ansible-galaxy install -r requirements.yml
+
+      # Dedicated deploy key (its public half is host_config_ci_runner_pubkey in
+      # inventory.yml). known_hosts is filled by ssh-keyscan over the tailnet: WireGuard
+      # already authenticated the peer, so the scanned host key is the real one; ansible.cfg
+      # keeps host_key_checking on.
+      - name: Set up SSH
+        env:
+          CI_DEPLOY_SSH_KEY: ${{ secrets.CI_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CI_DEPLOY_SSH_KEY" > ~/.ssh/ci_deploy
+          chmod 600 ~/.ssh/ci_deploy
+          ssh-keyscan -H mini04 > ~/.ssh/known_hosts
+          [ -s ~/.ssh/known_hosts ] || { echo "ssh-keyscan returned no host key for mini04" >&2; exit 1; }
+
+      - name: Set preview flags for a manual mode=check run (push always applies)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'check' }}
+        run: echo "PREVIEW_FLAGS=--check --diff" >> "$GITHUB_ENV"
+
+      - name: Provision mini04 (host config + kiosk)
+        run: |
+          # ANSIBLE_ARGS/PREVIEW_FLAGS are meant to word-split into multiple --flags
+          # shellcheck disable=SC2086
+          ansible-playbook mini04.yml -e "mini04_user=$MINI04_USER" $ANSIBLE_ARGS $PREVIEW_FLAGS

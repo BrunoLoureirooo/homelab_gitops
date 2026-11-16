@@ -1,0 +1,40 @@
+# Verbatim from ~/postgresConfigs/immichCluster.yaml on mini01 (fetched live
+# via SSH) - see argocd/apps/immich-infra.yaml. This is the external CNPG
+# Postgres the immich chart is pointed at (server.env.DB_HOSTNAME in
+# argocd/values/immich.yaml) instead of the chart's own bundled database.
+#
+# ⚠ Highest-risk object in this whole migration alongside the PVC above: the
+# CNPG `Cluster` kind has immutable fields (storage size can grow, never
+# shrink; instances/bootstrap config are effectively fixed post-init). Manual
+# sync, no prune, permanently - see argocd/README.md Section 3. No secret
+# material here (`bootstrap.initdb.secret` only names immich-db-creds, which
+# is sealed separately - see argocd/sealed-secrets/README.md), so this file
+# is safe to commit as-is.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: immich-pg
+  namespace: homeserver
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  instances: 1
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:17-1.1.1
+  priorityClassName: hs-interactive
+  postgresql:
+    shared_preload_libraries: ["vchord.so"]
+  bootstrap:
+    initdb:
+      database: immich
+      owner: immich
+      secret: { name: immich-db-creds }
+      postInitTemplateSQL:
+        - CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
+        - CREATE EXTENSION IF NOT EXISTS cube;
+        - CREATE EXTENSION IF NOT EXISTS earthdistance CASCADE;
+  storage:
+    size: 8Gi
+    storageClass: topolvm-fast
+  resources:
+    requests: { cpu: "250m", memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }

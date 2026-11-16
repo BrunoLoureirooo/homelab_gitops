@@ -1,0 +1,107 @@
+# __APP__ on mini01, using the project's published GHCR image. Single replica, Recreate (the PVC
+# is ReadWriteOnce). Pin the image by digest, never a moving tag; keep the tag in a comment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __APP__
+  labels:
+    app.kubernetes.io/name: __APP__
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: __APP__
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: __APP__
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: mini01
+      # Only for a PRIVATE GHCR package: seal a dockerconfigjson secret named ghcr-pull (README step 4).
+      # imagePullSecrets:
+      #   - name: ghcr-pull
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      # OPTIONAL, MEDIA DISK (1 of 3): write into a folder on a Toshiba disk. Uncomment this block, the
+      # `books` volumeMount and the `disk` and `books` volumes below. disk1 is /var/mnt/media, disk2 is
+      # /var/mnt/media2 (change both paths in all three places for disk2); rename Books as you like.
+      # This init container (uid 1000, same as the app) creates the folder, so the app can write to it;
+      # a hostPath of type DirectoryOrCreate would make it root-owned and read-only for the app.
+      # initContainers:
+      #   - name: make-media-dir
+      #     image: docker.io/library/busybox:1.37
+      #     command: ["sh", "-c", "mkdir -p /media/Books"]
+      #     securityContext:
+      #       allowPrivilegeEscalation: false
+      #       capabilities:
+      #         drop: [ALL]
+      #     volumeMounts:
+      #       - name: disk
+      #         mountPath: /media
+      containers:
+        - name: __APP__
+          image: __IMAGE__@sha256:__DIGEST__ # __TAG__
+          ports:
+            - name: http
+              containerPort: __PORT__
+          # Every key in the sealed Secret `__APP__-secrets` becomes an environment variable of the
+          # same name (seal-secret.sh creates it). Remove this block if the app has no secrets.
+          envFrom:
+            - secretRef:
+                name: __APP__-secrets
+          # Plain, non-secret settings. For the media disk (2 of 3) set the app's output-directory
+          # variable to the in-container path, here /books, and mount the folder there below:
+          # env:
+          #   - name: SOME_SETTING
+          #     value: "x"
+          #   - name: __APPVAR___OUTPUT_DIR # must be the exact name the app reads
+          #     value: /books
+          # To mount the secret as files instead of variables, use a `secret` volume on
+          # `__APP__-secrets` in `volumes:` plus a volumeMount.
+          # The namespace LimitRange defaults CPU to 500m, so set limits explicitly if it needs more.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # MEDIA DISK (3 of 3): the app sees only this folder, not the whole disk.
+            # - name: books
+            #   mountPath: /books
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: __APP__-data
+        # MEDIA DISK (3 of 3). Not backed up by Velero, like the Jellyfin library.
+        # - name: disk
+        #   hostPath:
+        #     path: /var/mnt/media
+        #     type: Directory
+        # - name: books
+        #   hostPath:
+        #     path: /var/mnt/media/Books
+        #     type: Directory

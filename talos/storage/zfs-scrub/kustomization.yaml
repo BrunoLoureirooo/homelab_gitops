@@ -1,0 +1,2 @@
+resources:
+  - zfs-scrub-cronjob.yaml

@@ -1,0 +1,15 @@
+# Actual's data: server-files/account.sqlite (hashed server password, budget list, bank-sync secrets)
+# and user-files/ (budget blobs). The class is named explicitly: the cluster has no default class.
+# Velero covers it through the pod annotation in deployment.yaml (daily, namespace homeserver).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: actual-budget-data
+  labels:
+    app.kubernetes.io/name: actual-budget
+spec:
+  storageClassName: topolvm-fast
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi

@@ -1,0 +1,61 @@
+# Monthly ZFS scrub for the mini02 tank pool (plan 15-05, WP6).
+#
+# Runs on mini02 only. Syncing the Argo CD app `zfs-scrub` also activates the
+# monthly schedule (01:00 on the 1st, controller time, UTC).
+#
+# The scrub runs `zpool scrub tank`, waits for completion, prints
+# `zpool status tank`, and fails the Job unless the pool is healthy.
+# No `zpool clear` or `zpool destroy`: read-only apart from the scrub itself.
+#
+# Finished Jobs are kept per the history limits (last 3 successful, last 3
+# failed), so the result of a monthly run stays readable.
+#
+# To test once: Argo CD's UI offers a Create Job action on CronJobs; verify it
+# appears. Use it instead of any command line, then read the Job log.
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: zfs-scrub
+  namespace: kube-system
+spec:
+  schedule: "0 1 1 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 43200
+      template:
+        spec:
+          restartPolicy: Never
+          hostPID: true
+          nodeSelector:
+            kubernetes.io/hostname: mini02
+          # mini02 is cordoned on purpose (node.kubernetes.io/unschedulable), so a pod pinned
+          # to it must tolerate that taint, like the samba-nas Deployment does.
+          tolerations:
+            - key: node.kubernetes.io/unschedulable
+              operator: Exists
+              effect: NoSchedule
+          containers:
+            - name: zfs-scrub
+              image: docker.io/library/busybox:1.37
+              securityContext:
+                privileged: true
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  host() { nsenter -t 1 -m -- "$@"; }
+                  echo "Starting ZFS scrub on tank pool"
+                  host zpool scrub tank
+                  echo "Waiting for scrub to complete..."
+                  host zpool wait -t scrub tank
+                  echo "Scrub complete"
+                  out="$(host zpool status -x tank)"
+                  echo "$out"
+                  host zpool status tank
+                  [ "$out" = "pool 'tank' is healthy" ] || { echo "scrub finished but the pool is not healthy" >&2; exit 1; }

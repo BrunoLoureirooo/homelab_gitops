@@ -1,0 +1,31 @@
+# DNS on the tailnet: the Tailscale operator gives this Service its own tailnet device `adguard`.
+# Set that device's tailnet address as a nameserver in the Tailscale admin console (DNS), with
+# "Override local DNS" on, and add a fallback nameserver so DNS survives mini01 being down.
+# Not exposed on the LAN in this version.
+apiVersion: v1
+kind: Service
+metadata:
+  name: adguard-dns
+  namespace: adguard
+  annotations:
+    tailscale.com/hostname: adguard
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector:
+    app.kubernetes.io/name: adguard-home
+  ports:
+    - {name: dns-udp, port: 53, targetPort: dns-udp, protocol: UDP}
+    - {name: dns-tcp, port: 53, targetPort: dns-tcp, protocol: TCP}
+---
+# Backend for the web UI Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: adguard-web
+  namespace: adguard
+spec:
+  selector:
+    app.kubernetes.io/name: adguard-home
+  ports:
+    - {name: web, port: 3000, targetPort: web}

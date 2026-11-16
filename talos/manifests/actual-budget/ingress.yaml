@@ -1,0 +1,25 @@
+# Actual Budget on the tailnet only, served by the Tailscale operator. The hostname is tls.hosts;
+# the full tailnet name is a host detail and is not committed. HTTPS is mandatory for this app: the
+# browser needs a secure context for SharedArrayBuffer. A stale `actual` device in the tailnet makes
+# the new one register as `actual-1`: delete the stale device in the Tailscale admin console first.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: actual-budget
+  labels:
+    app.kubernetes.io/name: actual-budget
+spec:
+  ingressClassName: tailscale
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: actual-budget
+                port:
+                  number: 5006
+  tls:
+    - hosts:
+        - actual

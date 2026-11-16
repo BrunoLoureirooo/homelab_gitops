@@ -1,0 +1,10 @@
+# mini01 (control plane, Intel iGPU, Realtek NIC). Extension names are checked
+# against the factory for the pinned TALOS_VERSION by the find-extensions job
+# (plan 15-04); a name that does not exist fails that job.
+customization:
+  systemExtensions:
+    officialExtensions:
+      - siderolabs/i915
+      - siderolabs/intel-ucode
+      - siderolabs/realtek-firmware
+      - siderolabs/tailscale

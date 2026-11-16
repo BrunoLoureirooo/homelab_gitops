@@ -1,0 +1,52 @@
+# mini02 (Talos worker): storage prerequisites for the ZFS mirror (plan 15-05).
+# Picked up by talos/render.sh as patches/volumes-<node>.yaml (plan 15-02).
+#
+# - machine.kernel.modules loads the zfs module shipped by the official
+#   siderolabs/zfs extension (the extension is in talos/schematics/mini02.yaml).
+# - the pool itself is NOT created from machine config: it is created once by
+#   the privileged Job in talos/storage/zfs-pool-job.yaml (extension README).
+# - the pool mounts under /var/tank (ZFS pools must live under /var). Talos 1.14 removed
+#   machine.kubelet.extraMounts with no replacement, so the kubelet bind mount (shared
+#   propagation) this file used to declare is gone. Whether pods using hostPath see the
+#   dataset without it is UNVERIFIED until talos/test/jobs/zfs-mirror.sh runs; record the
+#   answer in talos/FINDINGS.md under ## ZFS.
+#
+# Layout (mini02 has two 1 TB spinning disks and no SSD, 2026-10-17): Talos installs on one of
+# them (the `system` entry of the encrypted disk inventory pins which), its EPHEMERAL volume is
+# capped, and the rest of that disk becomes the raw partition `zfs1`. The other disk gets the raw
+# partition `zfs2` (`mirror` in the inventory). The ZFS mirror `tank` is built from the two
+# partitions labelled r-zfs1 and r-zfs2 (by-partlabel), by talos/storage/zfs-pool-job.yaml. The OS
+# lives only on the first disk: if it dies, reinstall from this repo; the data survives on the other.
+#
+# No disk paths, serial numbers or addresses belong in this file: the two data
+# drives are named at run time (ConfigMap in the pool Job), never committed.
+apiVersion: v1alpha1
+kind: KernelModuleConfig
+name: zfs
+---
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  diskSelector:
+    match: system_disk
+  maxSize: 100GiB
+---
+apiVersion: v1alpha1
+kind: RawVolumeConfig
+name: zfs1
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 100GB
+  grow: true
+---
+apiVersion: v1alpha1
+kind: RawVolumeConfig
+name: zfs2
+provisioning:
+  diskSelector:
+    match: '@@ZFS2_MATCH@@'
+  minSize: 880GB
+  maxSize: 900GB
+  grow: true

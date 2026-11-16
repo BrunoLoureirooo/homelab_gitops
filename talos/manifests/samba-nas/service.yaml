@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: samba-nas
+  labels:
+    app.kubernetes.io/name: samba-nas
+spec:
+  selector:
+    app.kubernetes.io/name: samba-nas
+  ports:
+    - name: smb
+      port: 445
+      targetPort: smb

@@ -1,0 +1,188 @@
+name: Talos deploy
+
+# Plan 15-08. Applies the Talos machine config (and, on request, version
+# upgrades and ArgoCD syncs) to the nodes over the tailnet. It replaces the
+# Ansible + self-hosted-runner path of deploy.yml AFTER gate G2; deploy.yml is
+# untouched until then.
+#
+# Safety, enforced by .github/scripts/check-workflow-safety.sh (rule F):
+#   - triggers are push to main and workflow_dispatch only, never a pull
+#     request (a PR must not reach the nodes);
+#   - permissions are exactly contents: read and id-token: write;
+#   - hosted runner only, no self-hosted label, no SSH;
+#   - every action is pinned by commit SHA, every downloaded binary by sha256;
+#   - applying needs an approved environment (talos-apply, required reviewer);
+#   - the runner joins the tailnet as an ephemeral node tagged tag:ci and the
+#     tailnet policy lets that tag reach tag:talos on ports 50000 and 6443 only.
+# Secrets are referenced by name only: SOPS_AGE_KEY, TS_OAUTH_SECRET (OAuth
+# route only). Repository variables: TALOS_NODES, TALOS_PING_HOST, TS_CLIENT_ID,
+# TS_AUDIENCE (OIDC route only). No step prints a config, token or address.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "talos/patches/**"
+      - "talos/nodes/**"
+      - "talos/schematics/**"
+      - "talos/cluster.env"
+      - "talos/secrets/**"
+      - "talos/versions.env"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check shows the diff and changes nothing; apply changes the nodes"
+        type: choice
+        options: [check, apply]
+        default: check
+      scope:
+        description: "what to roll out"
+        type: choice
+        options: [config, talos-upgrade, k8s-upgrade, argocd-health]
+        default: config
+      argocd_sync:
+        description: "comma separated ArgoCD Application names to sync (apply mode only)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: talos-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # push and apply both go through the approval gate; a check run does not.
+    environment: ${{ (github.event_name == 'push' || inputs.mode == 'apply') && 'talos-apply' || 'talos-check' }}
+    env:
+      MODE: ${{ inputs.mode || 'apply' }}
+      SCOPE: ${{ inputs.scope || 'config' }}
+      ARGOCD_SYNC: ${{ inputs.argocd_sync || '' }}
+      TALOS_NODES: ${{ vars.TALOS_NODES }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned tools (sha256 verified)
+        env:
+          SOPS_VERSION: "v3.13.3"
+          SOPS_SHA256: "e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b"
+          ARGOCD_VERSION: "v3.5.5"
+          ARGOCD_SHA256: "c3ddfa606fc3e89ab14f55bda6600b207c355b028f8eaabe69b817a4c4621aba"
+        run: |
+          set -euo pipefail
+          # talosctl and kubectl pins come from talos/versions.env (plan 15-01).
+          # shellcheck source=/dev/null
+          . talos/versions.env
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          fetch() { # fetch <url> <sha256> <dest>
+            curl -fsSL --retry 5 -o "$3" "$1"
+            echo "$2  $3" | sha256sum -c - >/dev/null
+            chmod +x "$3"
+          }
+          fetch "https://github.com/siderolabs/talos/releases/download/${TALOS_VERSION}/talosctl-linux-amd64" "$TALOSCTL_SHA256" "$bin/talosctl"
+          fetch "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" "$KUBECTL_SHA256" "$bin/kubectl"
+          fetch "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops-${SOPS_VERSION}.linux.amd64" "$SOPS_SHA256" "$bin/sops"
+          fetch "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64" "$ARGOCD_SHA256" "$bin/argocd"
+          echo "$bin" >>"$GITHUB_PATH"
+
+      # Two routes to the tailnet, exactly one runs. OIDC federation stores no
+      # long-lived secret; the OAuth client is the fallback (plan 15-08 Task 4).
+      - name: Join the tailnet (OIDC federation)
+        if: ${{ vars.TS_AUDIENCE != '' }}
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ vars.TS_CLIENT_ID }}
+          audience: ${{ vars.TS_AUDIENCE }}
+          tags: tag:ci
+          ping: ${{ vars.TALOS_PING_HOST }}
+
+      - name: Join the tailnet (OAuth client)
+        if: ${{ vars.TS_AUDIENCE == '' }}
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ vars.TS_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ vars.TALOS_PING_HOST }}
+
+      - name: Prepare credentials in the runner temp directory
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          # shellcheck source=/dev/null
+          . talos/cluster.env
+          printf '%s\n' "$SOPS_AGE_KEY" >"$RUNNER_TEMP/age.key"
+          SOPS_AGE_KEY_FILE="$RUNNER_TEMP/age.key" \
+            sops -d talos/secrets/secrets.sops.yaml >"$RUNNER_TEMP/secrets.yaml"
+          talosctl gen config "$CLUSTER_NAME" "https://${ENDPOINT_HOST}:${K8S_PORT}" \
+            --with-secrets "$RUNNER_TEMP/secrets.yaml" \
+            --output-types talosconfig --force -o "$RUNNER_TEMP/talosconfig" >/dev/null
+          rm -f "$RUNNER_TEMP/secrets.yaml"
+          {
+            echo "TALOSCONFIG=$RUNNER_TEMP/talosconfig"
+            echo "SOPS_AGE_KEY_FILE=$RUNNER_TEMP/age.key"
+          } >>"$GITHUB_ENV"
+
+      - name: Roll out the selected scope
+        run: |
+          set -euo pipefail
+          approved=0
+          [ "$MODE" = apply ] && approved=1
+          case "$SCOPE" in
+            config)
+              CI_APPROVED="$approved" bash talos/deploy/apply.sh --mode "$MODE"
+              ;;
+            talos-upgrade | k8s-upgrade)
+              flag=--talos
+              [ "$SCOPE" = k8s-upgrade ] && flag=--k8s
+              dry=--dry-run
+              [ "$MODE" = apply ] && dry=
+              # shellcheck disable=SC2086 # $dry is empty or one flag
+              CI_APPROVED="$approved" bash talos/deploy/upgrade.sh "$flag" $dry
+              ;;
+            argocd-health)
+              echo "scope argocd-health: nothing to roll out"
+              ;;
+            *)
+              echo "unknown scope" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: ArgoCD health and optional sync
+        if: ${{ always() && (inputs.scope == 'argocd-health' || inputs.argocd_sync != '') }}
+        run: |
+          set -euo pipefail
+          first="${TALOS_NODES%% *}"
+          cp="${first#*=}"
+          talosctl kubeconfig "$RUNNER_TEMP/kubeconfig" --nodes "${cp%%:*}" --endpoints "$cp" --force >/dev/null
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          kubectl config set-context --current --namespace=argocd >/dev/null
+          # Names, sync and health only; never the Application specs.
+          argocd app list --core -o json | jq -r '.[] | "\(.metadata.name) sync=\(.status.sync.status) health=\(.status.health.status)"'
+          if [ "$MODE" = apply ] && [ -n "$ARGOCD_SYNC" ]; then
+            IFS=',' read -r -a apps <<<"$ARGOCD_SYNC"
+            for app in "${apps[@]}"; do
+              # Input is untrusted text: Application names only.
+              if ! [[ "$app" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+                echo "refusing an invalid Application name" >&2
+                exit 2
+              fi
+              argocd app sync "$app" --core >/dev/null
+              argocd app wait "$app" --core --timeout 600 >/dev/null
+              echo "synced $app"
+            done
+          fi
+
+      - name: Remove credentials
+        if: ${{ always() }}
+        run: |
+          rm -f "$RUNNER_TEMP/age.key" "$RUNNER_TEMP/secrets.yaml" "$RUNNER_TEMP/talosconfig" "$RUNNER_TEMP/kubeconfig"

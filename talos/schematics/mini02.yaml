@@ -1,0 +1,8 @@
+# mini02 (worker, ZFS mirror for the NAS role). Hardware-specific firmware
+# extensions are added by plan 15-05 once the hardware facts are captured.
+customization:
+  systemExtensions:
+    officialExtensions:
+      - siderolabs/intel-ucode
+      - siderolabs/tailscale
+      - siderolabs/zfs

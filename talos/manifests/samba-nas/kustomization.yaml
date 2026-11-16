@@ -1,0 +1,17 @@
+# Samba NAS pod for mini02 (plan 15-05). Replaces the host Samba of the old
+# Phase 6 design: a Talos node has no host services, so Samba is a pod serving a
+# directory of the mini02 pool (a ZFS dataset under /var/tank, or the UserVolume
+# path when the storage decision falls back to option 2).
+#
+# The credential comes from the Secret `samba-nas-credentials` (key `credential`).
+# It is sealed by the operator (Task 4 of plan 15-05) into talos/sealed-secrets/ and is
+# never in this directory. Applying this without the Secret leaves the pod in
+# CreateContainerConfigError, which is the intended failure.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: nas
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - service-tailnet.yaml

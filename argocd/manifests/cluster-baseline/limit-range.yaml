@@ -1,0 +1,11 @@
+# Verbatim from ~/limitRange.yaml on mini01 (fetched live via SSH, applied by
+# hand originally) - see argocd/apps/cluster-baseline.yaml.
+apiVersion: v1
+kind: LimitRange
+metadata: { name: default-limits, namespace: homeserver }
+spec:
+  limits:
+    - type: Container
+      default: { cpu: "500m", memory: 512Mi }
+      defaultRequest: { cpu: "50m", memory: 128Mi }
+      max: { memory: 8Gi }

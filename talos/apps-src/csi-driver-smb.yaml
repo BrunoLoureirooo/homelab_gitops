@@ -1,0 +1,30 @@
+# SMB CSI driver (plan 15-05): lets pods on mini01 mount the shares that the Samba pod on mini02
+# serves from the ZFS pool (talos/manifests/samba-nas). Chart repo and version are pinned in
+# talos/storage/pins.env (CSI_SMB_CHART_REPO, CSI_SMB_CHART_VERSION); keep them in step.
+# The Talos kernel has CIFS built in (checked 2026-10-17: /proc/filesystems lists cifs and smb3).
+#
+# Manual sync, no automated block: it adds a node plugin that mounts volumes on every node.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: csi-driver-smb
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
+    chart: csi-driver-smb
+    targetRevision: v1.20.3
+    helm:
+      valuesObject:
+        controller:
+          replicas: 1 # one control-plane node
+        windows:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    # Manual sync, no automated block.

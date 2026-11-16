@@ -1,0 +1,47 @@
+# Fed to the tailscale/tailscale-operator chart via
+# argocd/apps/tailscale-operator.yaml.
+#
+# Confirmed live on mini01 (namespace `tailscale`, plus per-Service
+# StatefulSets `ts-immich-*` and `ts-vaultwarden-*` it already created) but
+# was Helm-installed by hand before this GitOps effort started - see
+# argocd/README.md's "cluster infrastructure" note. Chart version 1.102.3
+# matches a 2026-09-18 planning note exactly (and is still pinnable in the
+# tailscale repo today) - reasonable confidence, confirm via `helm list -A`
+# before syncing regardless.
+#
+# Lower risk than topolvm: this operator's control plane can be adopted or
+# even briefly disrupted without touching the already-running per-Service
+# tailnet devices it created (ts-immich, ts-vaultwarden) - those run as
+# their own StatefulSets, independent once created. What WOULD break during
+# any downtime is new Ingress objects not getting a tailnet device
+# provisioned until the operator's back.
+#
+# `ingressClass.name: "tailscale"` below matches the chart's own default -
+# stated explicitly, not because it needs to differ, since every Ingress in
+# this repo (immich, vaultwarden) already references `ingressClassName:
+# tailscale` and depends on this matching exactly.
+ingressClass:
+  name: "tailscale"
+  enabled: true
+
+# Deliberately NOT set here: `oauth.clientId` / `oauth.clientSecret`. Leaving
+# this block empty makes the chart expect a pre-existing Secret named
+# `operator-oauth` in this app's namespace (keys `client_id` / `client_secret`
+# - see the chart's own oauth-secret.yaml template) instead of rendering one
+# itself - which is exactly what we want, since that's a SealedSecret this
+# repo commits, not a value ArgoCD renders. See
+# argocd/sealed-secrets/README.md for how to generate and seal it - this is
+# a genuine day-0 choice for THIS repo's GitOps management of the operator,
+# even though the operator itself is already running: the live operator was
+# authenticated some other way originally (its own already-sealed or manually
+# -applied secret), and adopting it under ArgoCD means pointing at whatever
+# operator-oauth secret is actually live, not necessarily minting a new one -
+# confirm which is the case before generating a fresh OAuth client.
+oauth: {}
+
+# Every proxy the operator creates (Ingress/Service) uses the `default`
+# ProxyClass unless it names another - it shrinks the proxies' tunnel MTU so
+# their packets fit this cluster's 1230-byte pod MTU. See
+# argocd/manifests/tailscale-operator/proxyclass.yaml.
+proxyConfig:
+  defaultProxyClass: default

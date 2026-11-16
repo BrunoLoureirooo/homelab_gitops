@@ -1,0 +1,8 @@
+# Read from the Talos node on 2026-10-17: /dev/dri/renderD128 is owned by root (gid 0) with mode 0666, so
+# any user can open the render node and no supplemental group is needed (the Debian values, render=992
+# and video=44, do not exist on Talos). card1 is 0600 root and Jellyfin does not use it. If a future
+# Talos or kernel release tightens the mode, list the numeric gids here (`ls -ln /dev/dri` on the node,
+# for example through a short pod with a hostPath mount of /dev/dri) and the pod picks them up.
+- op: replace
+  path: /spec/template/spec/securityContext/supplementalGroups
+  value: []

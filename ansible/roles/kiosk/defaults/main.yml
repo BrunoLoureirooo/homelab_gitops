@@ -1,0 +1,37 @@
+---
+# Unprivileged account the kiosk runs as: no sudo, no SSH keys, locked
+# password, nologin shell. It never gets a kubeconfig.
+kiosk_user: kiosk
+kiosk_home: "/var/lib/{{ kiosk_user }}"   # Chromium profile lives under here
+# Device access for the compositor/browser. Harmless if logind already grants
+# it through its seat ACLs.
+kiosk_groups:
+  - video
+  - render
+  - input
+
+# Virtual terminal the kiosk takes over from getty.
+kiosk_tty: tty1
+kiosk_restart_sec: 5
+
+# What the screen shows. The real value contains the tailnet name, so it must
+# NOT be committed in clear text: inventory.yml points it at a vault variable
+# (vault_kiosk_url). This placeholder is rejected by an assert in tasks/main.yml.
+# Dashboard form: https://grafana.<tailnet-name>.ts.net/d/<uid>/<slug>?kiosk&refresh=1m&theme=dark
+kiosk_url: "https://grafana.<tailnet-name>.ts.net/?kiosk"
+
+kiosk_packages:
+  - cage
+  - chromium
+  - fonts-dejavu-core
+  - libgl1-mesa-dri   # GPU/GBM drivers; apt recommends are off
+  - kbd               # chvt, used when the unit starts
+
+kiosk_chromium_flags:
+  - --kiosk
+  - --ozone-platform=wayland
+  - --noerrdialogs
+  - --no-first-run
+  - --disable-infobars
+  - --password-store=basic
+  - --check-for-update-interval=31536000

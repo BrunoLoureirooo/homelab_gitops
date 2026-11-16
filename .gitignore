@@ -1,0 +1,45 @@
+# --- Secrets: the one that actually matters ---
+# The age PRIVATE key must never land here, even by accident.
+# (SOPS-encrypted files like *.sops.yaml / *.enc.yaml are fine and SHOULD be committed —
+# that's the whole point, they're safe to commit because they're encrypted.)
+*.agekey
+key.txt
+age-key.txt
+*.pem
+# Exception: the sealed-secrets controller's PUBLIC cert (encrypt-only, no
+# private key) - committed so anyone can seal offline. See its README.
+!argocd/sealed-secrets/pub-cert.pem
+*.key
+!**/templates/**/*.key    # don't accidentally catch legitimate Helm template files
+
+# --- Ansible ---
+*.retry
+.vault_pass
+*.vault_pass
+ansible/.ansible/    # local ansible-galaxy role/collection cache when ANSIBLE_HOME resolves here
+
+# --- Helm ---
+charts/*/charts/          # downloaded subchart tarballs (helm dependency update)
+*.tgz
+
+# --- Kubeconfig, if one ever ends up in the repo dir for testing ---
+kubeconfig
+*.kubeconfig
+.kube/
+
+# --- Python, if any tooling scripts get added later ---
+__pycache__/
+venv/
+.venv/
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+.idea/
+.vscode/
+
+# --- scratch: staging area for files pending manual deletion ---
+_to_delete/
+.claude/worktrees/

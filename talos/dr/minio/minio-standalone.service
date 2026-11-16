@@ -1,0 +1,34 @@
+# MinIO outside the cluster, on victus (plan 15-06 Task 6; docs/dr/minio-standalone.md).
+# Install as /etc/systemd/system/minio-standalone.service. It is installed DISABLED and must
+# never run at the same time as the in-cluster MinIO on the same data directory.
+#
+# /etc/minio-standalone.env (mode 0600, root) defines:
+#   BACKUP_DIR=/srv/backup            the data directory (use /srv/backup-trial for the dry run)
+#   MINIO_IMAGE=<registry/image@sha256:...>   the SAME image the in-cluster pod runs today
+#   MINIO_ROOT_USER=...  MINIO_ROOT_PASSWORD=...   root credentials (never in the repo)
+# Needs podman (pacman -S podman). The data directory must be writable by the container user;
+# the in-cluster chart does `chmod 0777` on it, do the same once if needed.
+[Unit]
+Description=Standalone MinIO for cluster backups
+Documentation=https://min.io/docs/minio/container/index.html
+After=network-online.target
+Wants=network-online.target
+ConditionPathIsDirectory=/srv
+
+[Service]
+EnvironmentFile=/etc/minio-standalone.env
+ExecStartPre=/usr/bin/test -d ${BACKUP_DIR}
+ExecStartPre=-/usr/bin/podman rm -f minio-standalone
+# Host networking on purpose: victus also runs Docker, whose FORWARD policy is DROP, which silently
+# blocks traffic from the LAN to podman's published ports (found 2026-10-17). The console stays
+# on localhost.
+ExecStart=/usr/bin/podman run --name minio-standalone --rm --network host \
+  -e MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD \
+  -v ${BACKUP_DIR}:/data:Z \
+  ${MINIO_IMAGE} server /data --address :9000 --console-address 127.0.0.1:9001
+ExecStop=/usr/bin/podman stop -t 30 minio-standalone
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

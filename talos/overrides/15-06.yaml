@@ -1,0 +1,15 @@
+# Plan 15-06's contribution to talos/apps-overrides.yaml (plan 15-03 owns that file and
+# talos/render-apps.sh; neither exists on this branch). When this branch is stacked on
+# phase15/talos-ci, merge the keys below into talos/apps-overrides.yaml (same schema: exclude,
+# extra_valuefiles, set, path) and delete this file. Then run talos/render-apps.sh so the Talos
+# copies in talos/apps/ pick the changes up.
+#
+# The Talos-only Applications in talos/apps-src/ (cnpg-operator, backup-target,
+# talos-sealed-secrets) need no entry: render-apps.sh copies apps-src as is.
+extra_valuefiles:
+  velero:
+    - talos/values/velero.yaml        # homeserver-hourly schedule, stable backup target name
+  vaultwarden:
+    - talos/values/vaultwarden.yaml   # Litestream sidecar and restore init container
+path:
+  immich-infra: talos/manifests/immich-infra   # base + WAL archiving, built by talos/overlays/render.sh

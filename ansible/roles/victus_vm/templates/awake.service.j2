@@ -1,0 +1,14 @@
+# Managed by Ansible (roles/victus_vm). Holds a sleep and lid-switch inhibitor
+# for as long as the VM's host is meant to serve the cluster: a suspended machine
+# takes the mini03 worker (arr stack, torrents, backup replica) offline.
+[Unit]
+Description=Keep victus awake while the mini03 worker VM runs
+After=libvirtd.service
+Wants=libvirtd.service
+
+[Service]
+ExecStart=/usr/bin/systemd-inhibit --what=sleep:handle-lid-switch --who={{ victus_vm_name }} --why="mini03 worker VM runs on this machine" --mode=block /usr/bin/sleep infinity
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

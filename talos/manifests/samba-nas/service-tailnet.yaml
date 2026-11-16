@@ -1,0 +1,20 @@
+# SMB on the tailnet: the Tailscale operator gives this Service its own tailnet device `nas`.
+# Clients mount `smb://nas/<share>` from anywhere; SMB over the internet is slower than at home.
+apiVersion: v1
+kind: Service
+metadata:
+  name: samba-nas-tailnet
+  namespace: nas
+  annotations:
+    tailscale.com/hostname: nas
+    # Run the proxy pod on mini02 next to Samba (see proxyclass.yaml).
+    tailscale.com/proxy-class: nas
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector:
+    app.kubernetes.io/name: samba-nas
+  ports:
+    - name: smb
+      port: 445
+      targetPort: smb

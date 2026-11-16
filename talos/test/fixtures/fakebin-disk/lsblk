@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Test stand-in for `lsblk -no PKNAME <device>`. FAKE_DISK_MAP holds one
+# `device parent-disk` pair per line; an unknown device prints nothing, like a
+# whole disk does on the real tool.
+set -euo pipefail
+dev="${*: -1}"
+while read -r device parent; do
+  [[ "$device" == "$dev" ]] && echo "$parent"
+done <"$FAKE_DISK_MAP"
+exit 0

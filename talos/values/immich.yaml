@@ -1,0 +1,11 @@
+# Talos-only overrides for the immich Application (merged by talos/apps-overrides.yaml
+# `extra_valuefiles`; the shared argocd/values/immich.yaml is not edited, the old Debian tree
+# still uses the local claim).
+#
+# The photo library lives on the mini02 ZFS dataset tank/immich, served by the Samba pod and
+# mounted on mini01 through csi-driver-smb: PV and PVC `immich-library-smb` are in
+# talos/overlays/immich-infra/library-smb.yaml. The Postgres database stays on mini01.
+immich:
+  persistence:
+    library:
+      existingClaim: immich-library-smb

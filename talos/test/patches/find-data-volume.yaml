@@ -1,0 +1,12 @@
+# CI-only (plan 15-04): a user volume `data` on the first non-system disk
+# (the 20 GB test disk), mounted by Talos at /var/mnt/data.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: data
+provisioning:
+  diskSelector:
+    match: '!system_disk && disk.size > 15u * GB'
+  minSize: 10GB
+  grow: true
+filesystem:
+  type: xfs
