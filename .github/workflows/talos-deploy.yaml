@@ -14,9 +14,10 @@ name: Talos deploy
 #   - applying needs an approved environment (talos-apply, required reviewer);
 #   - the runner joins the tailnet as an ephemeral node tagged tag:ci and the
 #     tailnet policy lets that tag reach tag:talos on ports 50000 and 6443 only.
-# Secrets are referenced by name only: SOPS_AGE_KEY, TS_OAUTH_SECRET (OAuth
-# route only). Repository variables: TALOS_NODES, TALOS_PING_HOST, TS_CLIENT_ID,
-# TS_AUDIENCE (OIDC route only). No step prints a config, token or address.
+# The only secret is SOPS_AGE_KEY (referenced by name). Tailscale uses workload
+# identity federation (OIDC), so there is no Tailscale secret. Variables:
+# TALOS_NODES, TALOS_PING_HOST, TS_CLIENT_ID, TS_AUDIENCE. No step prints a
+# config, token or address.
 
 on:
   push:
@@ -65,17 +66,34 @@ jobs:
       ARGOCD_SYNC: ${{ inputs.argocd_sync || '' }}
       TALOS_NODES: ${{ vars.TALOS_NODES }}
     steps:
+      # Names only are checked; a value is never printed.
+      - name: Require the configured variables and secrets
+        env:
+          TALOS_PING_HOST: ${{ vars.TALOS_PING_HOST }}
+          TS_CLIENT_ID: ${{ vars.TS_CLIENT_ID }}
+          TS_AUDIENCE: ${{ vars.TS_AUDIENCE }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          missing=0
+          for name in TALOS_NODES TALOS_PING_HOST TS_CLIENT_ID TS_AUDIENCE SOPS_AGE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::required variable or secret $name is not set (see .github/SECRETS.md)"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install pinned tools (sha256 verified)
         env:
-          SOPS_VERSION: "v3.13.3"
-          SOPS_SHA256: "e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b"
+          # SOPS_* come from talos/versions.env (the single source). Argo CD is
+          # not in versions.env, so it stays pinned here.
           ARGOCD_VERSION: "v3.5.5"
           ARGOCD_SHA256: "c3ddfa606fc3e89ab14f55bda6600b207c355b028f8eaabe69b817a4c4621aba"
         run: |
           set -euo pipefail
-          # talosctl and kubectl pins come from talos/versions.env (plan 15-01).
+          # talosctl, kubectl and sops pins come from talos/versions.env (plan 15-01).
           # shellcheck source=/dev/null
           . talos/versions.env
           bin="$RUNNER_TEMP/bin"
@@ -91,23 +109,12 @@ jobs:
           fetch "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64" "$ARGOCD_SHA256" "$bin/argocd"
           echo "$bin" >>"$GITHUB_PATH"
 
-      # Two routes to the tailnet, exactly one runs. OIDC federation stores no
-      # long-lived secret; the OAuth client is the fallback (plan 15-08 Task 4).
+      # Workload identity federation: no long-lived Tailscale secret.
       - name: Join the tailnet (OIDC federation)
-        if: ${{ vars.TS_AUDIENCE != '' }}
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
         with:
           oauth-client-id: ${{ vars.TS_CLIENT_ID }}
           audience: ${{ vars.TS_AUDIENCE }}
-          tags: tag:ci
-          ping: ${{ vars.TALOS_PING_HOST }}
-
-      - name: Join the tailnet (OAuth client)
-        if: ${{ vars.TS_AUDIENCE == '' }}
-        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
-        with:
-          oauth-client-id: ${{ vars.TS_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
           ping: ${{ vars.TALOS_PING_HOST }}
 

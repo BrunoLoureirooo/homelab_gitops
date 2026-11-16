@@ -23,6 +23,45 @@ gh api -X PUT repos/BrunoLoureirooo/homelab_gitops/environments/<name>
 Each command prompts for the value (or reads stdin); run them from a shell
 where the value is not recorded in history.
 
+## Tailscale (all workflows): federated identity, no secrets
+
+Every Tailscale step (`deploy.yml` victus and mini04, `talos-deploy.yaml`) joins
+the tailnet by workload identity federation (OIDC). There are no Tailscale
+secrets; the two values below are repo **variables**:
+
+```sh
+R=BrunoLoureirooo/homelab_gitops
+gh variable set TS_CLIENT_ID -R $R --body <client-id>
+gh variable set TS_AUDIENCE  -R $R --body <audience>
+```
+
+In the Tailscale admin console (Settings, Trust credentials) add a federated
+identity:
+
+- issuer: GitHub
+- subject: `repo:BrunoLoureirooo/homelab_gitops:environment:*`
+- scope: `auth_keys` write
+- tag: `tag:ci`
+
+Copy the client ID and audience the console shows into the variables above.
+The jobs need `id-token: write`, which is granted at job level in `deploy.yml`
+and at top level in `talos-deploy.yaml`.
+
+Tailnet policy (placeholders only; use your own device names):
+
+```json
+{
+  "tagOwners": {
+    "tag:ci":    ["<owner-login>"],
+    "tag:talos": ["<owner-login>"]
+  },
+  "grants": [
+    { "src": ["tag:ci"], "dst": ["tag:talos"], "ip": ["tcp:50000", "tcp:6443"] },
+    { "src": ["tag:ci"], "dst": ["<victus>", "<mini04>"], "ip": ["tcp:22"] }
+  ]
+}
+```
+
 ## victus
 
 ```sh
@@ -30,8 +69,6 @@ R=BrunoLoureirooo/homelab_gitops
 gh secret set ANSIBLE_VAULT_PASSWORD  --env victus -R $R
 gh secret set ANSIBLE_BECOME_PASSWORD --env victus -R $R
 gh secret set CI_DEPLOY_SSH_KEY       --env victus -R $R < ~/.ssh/homelab-ci
-gh secret set TS_OAUTH_CLIENT_ID      --env victus -R $R
-gh secret set TS_OAUTH_SECRET         --env victus -R $R
 ```
 
 ## mini04
@@ -43,27 +80,30 @@ Same as victus without the become password (sudo uses the vault's
 R=BrunoLoureirooo/homelab_gitops
 gh secret set ANSIBLE_VAULT_PASSWORD --env mini04 -R $R
 gh secret set CI_DEPLOY_SSH_KEY      --env mini04 -R $R < ~/.ssh/homelab-ci
-gh secret set TS_OAUTH_CLIENT_ID     --env mini04 -R $R
-gh secret set TS_OAUTH_SECRET        --env mini04 -R $R
 ```
 
 ## talos-apply and talos-check
 
-`talos-deploy.yaml` reads `SOPS_AGE_KEY` and `TS_OAUTH_SECRET` as secrets.
-Set both in each environment:
+`talos-deploy.yaml` reads one secret, `SOPS_AGE_KEY`. Set it in each
+environment:
 
 ```sh
 R=BrunoLoureirooo/homelab_gitops
-for e in talos-apply talos-check; do
-  gh secret set SOPS_AGE_KEY   --env "$e" -R $R
-  gh secret set TS_OAUTH_SECRET --env "$e" -R $R
-done
+gh secret set SOPS_AGE_KEY --env talos-apply -R $R < ~/.config/sops/age/keys.txt
+gh secret set SOPS_AGE_KEY --env talos-check -R $R < ~/.config/sops/age/keys.txt
 ```
 
-Non-secret values it reads as variables: `TALOS_NODES`, `TS_CLIENT_ID`,
-`TS_AUDIENCE`, `TALOS_PING_HOST` (set with `gh variable set NAME -R $R --body <value>`,
-repo level or per environment with `--env`). When `TS_AUDIENCE` is set the
-workflow uses OIDC and `TS_OAUTH_SECRET` is not read.
+Variables it reads (`gh variable set NAME -R $R --body <value>`, repo level or
+per environment with `--env`):
+
+- `TALOS_NODES`: `mini01=mini01 mini02=mini02 mini03=mini03` (space separated
+  `name=endpoint`, MagicDNS short names, control plane first).
+- `TALOS_PING_HOST`: a Talos node's short name; the Tailscale step pings it
+  before anything runs.
+- `TS_CLIENT_ID`, `TS_AUDIENCE`: see the Tailscale section above.
+
+Both workflows start with a step that fails with `::error::` naming any missing
+variable or secret (names only, never values).
 
 ## Repo-level variable
 
