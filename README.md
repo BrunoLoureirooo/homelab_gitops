@@ -80,6 +80,7 @@ renovate.json   automated PRs for Helm chart versions and image tags
   (`ansible/group_vars/all/vault.yml`; the variables are listed in
   `vault.yml.example`).
 - CI secrets are GitHub Actions secrets and are referenced by name only.
+  Per-environment setup and the `gh` commands are in [.github/SECRETS.md](.github/SECRETS.md).
 
 ## Getting started
 

@@ -112,12 +112,14 @@ jobs:
 
   # mini04 is reached over the tailnet by its MagicDNS short name (inventory.yml) with the
   # CI deploy key, which host_config authorizes (host_config_ci_runner_pubkey). sudo uses
-  # ansible_become_password from the vault, so there is no per-host environment and no
-  # become-password file.
+  # ansible_become_password from the vault, so there is no become-password file. Its
+  # environment (main-only, no reviewer) scopes the deploy secrets to main and keeps
+  # push-to-main deploys automatic.
   mini04:
     if: ${{ github.event_name == 'push' || inputs.target == 'mini04' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    environment: mini04
     concurrency:
       group: deploy-mini04
       cancel-in-progress: false

@@ -117,7 +117,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------------------------
-step "e. Environments (read from the workflows: victus, talos-apply, talos-check)"
+step "e. Environments (read from the workflows: victus, mini04, talos-apply, talos-check)"
 OWNER_ID="$(api "users/$OWNER" --jq .id)"
 # env_setup NAME WITH_REVIEWER(true|false)
 env_setup() {
@@ -137,6 +137,10 @@ env_setup() {
 }
 # victus: deploy.yml, manual apply to the backup/desktop host; holds its become password.
 env_setup victus true
+# mini04: deploy.yml on push to main and manual runs. Main-only branch policy, NO reviewer, so
+# push-to-main deploys stay automatic. To gate it, change `false` to `true` (one line: the
+# owner becomes the required reviewer).
+env_setup mini04 false
 # talos-apply: talos-deploy.yaml on push to main and mode=apply; changes the live nodes.
 env_setup talos-apply true
 # talos-check: talos-deploy.yaml mode=check; read-only diff, so no reviewer (a gate here would
