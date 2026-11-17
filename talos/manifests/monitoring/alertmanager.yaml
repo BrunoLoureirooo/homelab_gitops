@@ -57,5 +57,6 @@ spec:
             - {name: data, mountPath: /alertmanager}
       volumes:
         - {name: config, configMap: {name: alertmanager-config}}
-        - {name: notifiers, secret: {secretName: alertmanager-notifiers, defaultMode: 0440}}
+        # defaultMode 288 == 0440 octal (yamllint octal-values forbids the literal)
+        - {name: notifiers, secret: {secretName: alertmanager-notifiers, defaultMode: 288}}
         - {name: data, persistentVolumeClaim: {claimName: alertmanager-data}}
