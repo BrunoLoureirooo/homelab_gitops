@@ -31,6 +31,9 @@
   register: victus_vm_disk_found
   changed_when: false
   check_mode: false
+  # The environment holds the disk serial, which comes from the vault. This repo is
+  # public and so are its Actions logs, so keep it out of any task output.
+  no_log: true
 
 - name: Assert exactly one disk has that serial
   ansible.builtin.assert:
@@ -38,7 +41,8 @@
       - victus_vm_disk_serial | length > 0
       - victus_vm_disk_found.stdout_lines | length == 1
     fail_msg: >-
-      Expected exactly one whole disk with serial '{{ victus_vm_disk_serial }}' on
+      Expected exactly one whole disk with the serial from the vault (vault_victus_vm_disk_serial,
+      not printed: this repo and its Actions logs are public) on
       {{ inventory_hostname }}, found {{ victus_vm_disk_found.stdout_lines | length }}. Is the 512 GB
       disk installed? Nothing has been changed.
 

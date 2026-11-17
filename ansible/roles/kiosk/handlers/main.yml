@@ -4,3 +4,5 @@
     name: kiosk.service
     state: restarted
     daemon_reload: true
+  # In a dry run (--check) the unit file was never written, so there is nothing to restart.
+  ignore_errors: "{{ ansible_check_mode }}"

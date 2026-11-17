@@ -39,8 +39,10 @@ In the Tailscale admin console (Settings, Trust credentials) add a federated
 identity:
 
 - issuer: GitHub
-- subject: `repo:BrunoLoureirooo/homelab_gitops:environment:*`
+- subject: `repo:BrunoLoureirooo@260150266/homelab_gitops@1459343685:environment:*`
 - scope: `auth_keys` write
+- The subject uses GitHub's immutable-ID format (owner and repo IDs, both public). If it
+  does not match, the console shows the subject it received: copy that one.
 - tag: `tag:ci`
 
 Copy the client ID and audience the console shows into the variables above.
