@@ -52,15 +52,28 @@ Tailnet policy (placeholders only; use your own device names):
 ```json
 {
   "tagOwners": {
-    "tag:ci":    ["<owner-login>"],
-    "tag:talos": ["<owner-login>"]
+    "tag:ci": ["<owner-login>"]
+  },
+  "hosts": {
+    "mini01": "100.x.y.z",
+    "mini02": "100.x.y.z",
+    "mini03": "100.x.y.z"
   },
   "grants": [
-    { "src": ["tag:ci"], "dst": ["tag:talos"], "ip": ["tcp:50000", "tcp:6443"] },
-    { "src": ["tag:ci"], "dst": ["<victus>", "<mini04>"], "ip": ["tcp:22"] }
+    { "src": ["tag:ci"], "dst": ["mini01", "mini02", "mini03"], "ip": ["tcp:50000", "tcp:6443"] },
+    { "src": ["tag:ci"], "dst": ["mini04", "victus"], "ip": ["tcp:22"] }
   ]
 }
 ```
+
+The Talos nodes are untagged, so they are reached through `hosts` aliases
+(one per node; use your real tailnet addresses, never commit them). Narrow any
+existing allow-all grant so its `src` is only `autogroup:member`, `tag:k8s` and
+`tag:k8s-operator`; then `tag:ci` gets nothing beyond the grants above.
+
+Possible future improvement: tag the nodes `tag:talos` by creating their auth
+keys (`talos/secrets`) with that tag, then grant `tag:ci` to `tag:talos`
+instead of the host aliases.
 
 ## victus
 
