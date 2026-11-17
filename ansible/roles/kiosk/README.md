@@ -58,5 +58,9 @@ For a one-off, `-e kiosk_url=...` works too.
   the recovery path; SSH is the other.
 - `kiosk.service` uses its own PAM service (`/etc/pam.d/kiosk`) as the cage
   wiki recommends.
+- Cursor and scrollbars: cage 0.2.0 has no cursor-hiding option, so
+  `files/hide-cursor` is an unpacked Chromium extension (`cursor: none`) loaded
+  with `--load-extension`; Debian's unbranded Chromium still honours that flag
+  (Google Chrome 137+ does not). `--hide-scrollbars` hides the scrollbars.
 - Defaults (user, groups, tty, packages, Chromium flags) are in
   `defaults/main.yml`. Sleep, suspend and hibernate targets are masked.
