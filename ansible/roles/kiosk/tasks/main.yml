@@ -50,13 +50,19 @@
     group: root
     mode: "0644"
   notify: Restart kiosk
+  # kiosk_url comes from the vault and contains the private tailnet hostname. This
+  # repo is public and so are its Actions logs, so `--diff` must never print it.
+  diff: false
 
+# In a dry run (--check) the unit file above is only rendered, never written, so
+# systemd cannot find kiosk.service yet and this fails. Ignore that in check mode only.
 - name: Enable kiosk.service
   ansible.builtin.systemd_service:
     name: kiosk.service
     enabled: true
     state: started
     daemon_reload: true
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Read the default systemd target
   ansible.builtin.command: systemctl get-default

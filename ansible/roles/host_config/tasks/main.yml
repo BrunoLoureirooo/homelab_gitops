@@ -41,12 +41,18 @@
   ansible.builtin.package:
     name: tailscale
     state: present
+  # In a dry run (--check) on a bare Debian host the Tailscale repo above is only
+  # simulated, so apt cannot find the package yet. Ignore that in check mode only.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Ensure tailscaled is enabled and running
   ansible.builtin.service:
     name: tailscaled
     enabled: true
     state: started
+  # In a dry run (--check) the package above may only be simulated, so the service
+  # does not exist yet. Ignore that in check mode only.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Both of today's hosts are already authed and connected to the tailnet,
 # and by default this stays a manual, interactive step: `tailscale up` is a

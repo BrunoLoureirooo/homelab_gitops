@@ -35,9 +35,10 @@ uses them until a Talos node is on the tailnet.
    Future improvement: tag the nodes `tag:talos` via the auth keys in
    `talos/secrets`, then grant to that tag instead of the aliases.
 2. **CI identity.** Create a federated identity for GitHub OIDC (issuer
-   GitHub, subject `repo:BrunoLoureirooo/homelab_gitops:environment:*`), scoped
+   GitHub, subject `repo:BrunoLoureirooo@260150266/homelab_gitops@1459343685:environment:*`), scoped
    to the `auth_keys` write permission with tag `tag:ci`. Note the client id and
-   audience: neither is a secret. Full steps: `.github/SECRETS.md`.
+   audience: neither is a secret. If the subject does not match, the console shows
+   the one it received. Full steps: `.github/SECRETS.md`.
 3. **GitHub environments** (repository Settings, Environments): create
    `talos-check` (no reviewer) and `talos-apply` (required reviewer: you,
    restricted to branch `main`). Add the secret `SOPS_AGE_KEY` to both (the age

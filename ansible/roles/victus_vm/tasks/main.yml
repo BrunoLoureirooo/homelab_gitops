@@ -135,6 +135,9 @@
     mode: "0644"
   notify: Define the mini03 VM domain
   when: not victus_vm_hypervisor_pending
+  # The domain XML carries victus_vm_mac, which comes from the vault. This repo is
+  # public and so are its Actions logs, so `--diff` must never print it.
+  diff: false
 
 - name: Check whether the domain is already defined
   ansible.builtin.command: "virsh -c qemu:///system dominfo {{ victus_vm_name }}"
