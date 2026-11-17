@@ -65,6 +65,8 @@ jobs:
     steps:
       # Names only are checked; a value is never printed.
       - name: Require the configured variables and secrets
+        # ansible/ does not exist until checkout; run from the workspace so this can stay first.
+        working-directory: ${{ github.workspace }}
         env:
           TS_CLIENT_ID: ${{ vars.TS_CLIENT_ID }}
           TS_AUDIENCE: ${{ vars.TS_AUDIENCE }}
@@ -157,6 +159,8 @@ jobs:
     steps:
       # Names only are checked; a value is never printed.
       - name: Require the configured variables and secrets
+        # ansible/ does not exist until checkout; run from the workspace so this can stay first.
+        working-directory: ${{ github.workspace }}
         env:
           TS_CLIENT_ID: ${{ vars.TS_CLIENT_ID }}
           TS_AUDIENCE: ${{ vars.TS_AUDIENCE }}

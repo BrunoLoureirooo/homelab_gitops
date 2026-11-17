@@ -28,8 +28,8 @@ plaintext copy on exit (`render.sh --check-secrets-clean` proves nothing is left
 
 ## 3. Tailscale auth key (per node, at cutover time)
 
-In the admin console create a single-use, pre-approved, tagged key (tag
-`tag:talos`) with a one-day expiry. Put the complete service config in a
+In the admin console create a single-use, pre-approved, untagged key with a one-day expiry
+(tagging it `tag:talos` is a possible future improvement). Put the complete service config in a
 temporary file, encrypt it with `sops -e` into `tailscale-<node>.sops.yaml`
 (same document as `patches/tailscale.yaml` plus the auth key environment entry),
 then shred the temporary file. The key is never written to git, a log or a PR

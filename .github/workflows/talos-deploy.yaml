@@ -13,7 +13,7 @@ name: Talos deploy
 #   - every action is pinned by commit SHA, every downloaded binary by sha256;
 #   - applying needs an approved environment (talos-apply, required reviewer);
 #   - the runner joins the tailnet as an ephemeral node tagged tag:ci and the
-#     tailnet policy lets that tag reach tag:talos on ports 50000 and 6443 only.
+#     tailnet policy lets that tag reach the node host aliases (mini01-03) on ports 50000 and 6443 only.
 # The only secret is SOPS_AGE_KEY (referenced by name). Tailscale uses workload
 # identity federation (OIDC), so there is no Tailscale secret. Variables:
 # TALOS_NODES, TALOS_PING_HOST, TS_CLIENT_ID, TS_AUDIENCE. No step prints a

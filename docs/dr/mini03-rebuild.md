@@ -10,7 +10,7 @@ Steps marked (victus) run on victus; the rest on the Mac that has the repo, `tal
 |---|---|---|
 | Control-plane LAN address | untracked `talos/local/cluster.local.env` | copy `talos/cluster.local.env.example` there and set `ENDPOINT_HOST` |
 | VM variables (MAC, ISO path, switches) | untracked `~/victus-vm.local.yml` | copy `ansible/victus-vm.local.yml.example` |
-| Tailscale auth key | `talos/secrets/tailscale-mini03.sops.yaml`, but the key inside is single-use and expires after a day | mint a new one (tag `tag:talos`, single-use, one day) and re-encrypt |
+| Tailscale auth key | `talos/secrets/tailscale-mini03.sops.yaml`, but the key inside is single-use and expires after a day | mint a new one (untagged, single-use, one day; `tag:talos` is a possible future improvement) and re-encrypt |
 | age key | `~/.config/sops/age/keys.txt` | needed for every `sops` call (`SOPS_AGE_KEY_FILE`) |
 
 ## Steps
@@ -24,8 +24,8 @@ Steps marked (victus) run on victus; the rest on the Mac that has the repo, `tal
 3. **ISO.** `talos/fetch-assets.sh mini03 iso` checks the pinned hash. Run it from `main`: a stale
    branch fails with "SCHEMATIC_MINI03_ID is not a pinned 64-hex id". Copy the ISO to victus and
    set `victus_vm_install_iso`.
-4. **Tailscale key.** In the Tailscale admin console create a single-use, one-day key for
-   `tag:talos`. From the `talos/` directory, with `SOPS_AGE_KEY_FILE` set, write the
+4. **Tailscale key.** In the Tailscale admin console create a single-use, one-day key
+   (untagged; `tag:talos` is a possible future improvement). From the `talos/` directory, with `SOPS_AGE_KEY_FILE` set, write the
    `ExtensionServiceConfig` (see `talos/secrets/README.md` section 3) to a temp file, `sops -e` it
    into a second temp file, then `mv` that over `secrets/tailscale-mini03.sops.yaml`. Running sops
    from another directory ignores `.sops.yaml` and leaves a 0-byte file. Never commit plaintext.

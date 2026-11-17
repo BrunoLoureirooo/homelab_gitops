@@ -97,7 +97,7 @@ permanently). Creating or reshaping a host bridge.
 | P3 | Gate G2 of the cutover passed | `grep -n "G2" talos/CUTOVER.md | head` and the cluster has run for a while; the operator confirms. Cutover is done in reality (nodes Ready for 8 days) | Ask the operator; the design says "never during the cutover" |
 | P4 | The interim second copy of the backups and Immich library on victus `/home` (design phase P0) is taken and verified, OR the operator decides to skip it knowing the 512 GB NVMe holds the old Debian install and the only copy outside mini02 | The operator states it (Decision D8) | STOP before WP3 (the wipe) |
 | P5 | sops/age key and the secrets bundle usable by the operator | `ls talos/secrets` shows `secrets.sops.yaml`, `tailscale-mini01.sops.yaml`, `tailscale-mini02.sops.yaml`; the operator has the age private key on his Mac | STOP, the operator must restore the key (`talos/secrets/README.md`) |
-| P6 | A Tailscale admin console where the operator can make a tagged auth key (tag `tag:talos`) | The operator's confirmation | STOP at WP6 |
+| P6 | A Tailscale admin console where the operator can make a tagged auth key (untagged) | The operator's confirmation | STOP at WP6 |
 | P7 | Router access for a DHCP reservation | The operator's confirmation | STOP at WP5 |
 | P8 | Ansible control node (The operator's Mac) with `ansible-core`, `ansible-vault` and SSH to victus | `ansible --version` | The operator installs it (`ansible/README.md`) |
 
@@ -299,7 +299,7 @@ this repository in clear text; none is created by the executor.
 | C1 | Talos secrets bundle (cluster CA, tokens) | Already exists (`talosctl gen secrets`, encrypted with sops+age) | `talos/secrets/secrets.sops.yaml` (encrypted, committed) | `render.sh` decrypts for one render and deletes the plaintext | None; it is the cluster identity | Needs the age private key on the operator's Mac (offline copy; see `talos/secrets/README.md`) | Cannot render mini03 or any node; a lost key and bundle means a new cluster identity | `talos/secrets/README.md` section 4 |
 | C2 | age private key | Already exists (`age-keygen`) | The operator's offline media and Mac; never in the repo or cluster. Note: per the operator's notes the copy on the Ventoy stick is plaintext (cleanup item) | `SOPS_AGE_KEY_FILE=<keyfile>` in his terminal, or the key in `$SOPS_AGE_KEY_FILE`'s default location | n/a | His storage | Cannot decrypt secrets | New key pair, `sops updatekeys` |
 | C3 | `talosconfig` (client certificate for `talosctl`) | Produced with the bundle (`talosctl gen config`) or exported by the existing workflow | The operator's Mac, e.g. `~/.talos/config`; the deploy workflow gets it from the `SOPS_AGE_KEY`-protected bundle. Never committed. [UNVERIFIED which path the operator uses; `TALOSCONFIG` env var overrides] | `talosctl --talosconfig <path>` or `TALOSCONFIG=<path>` | n/a | his Mac | Re-derive from the bundle (`talosctl gen config` with the same secrets, `render.sh` flow) | with the bundle |
-| C4 | Tailscale auth key for mini03 | The operator creates in the Tailscale admin console: single-use, pre-approved, tagged `tag:talos`, one-day expiry | encrypted file `talos/secrets/tailscale-mini03.sops.yaml` (a full `ExtensionServiceConfig` named `tailscale`, per `talos/secrets/README.md` section 3) | `render.sh` includes it in the rendered config | the key is shown once in the console; copy straight into the temp file | not retrievable; expired keys are replaced | Make a new key and re-encrypt; the node re-registers when its config is re-applied | one-day expiry by design |
+| C4 | Tailscale auth key for mini03 | The operator creates in the Tailscale admin console: single-use, pre-approved, untagged, one-day expiry | encrypted file `talos/secrets/tailscale-mini03.sops.yaml` (a full `ExtensionServiceConfig` named `tailscale`, per `talos/secrets/README.md` section 3) | `render.sh` includes it in the rendered config | the key is shown once in the console; copy straight into the temp file | not retrievable; expired keys are replaced | Make a new key and re-encrypt; the node re-registers when its config is re-applied | one-day expiry by design |
 | C5 | Ansible vault password | The operator chose it | **Not stored anywhere on disk** (README: "the vault password isn't stored anywhere"); locally the operator types it at the `--ask-vault-pass` prompt; for CI it is the GitHub repo secret `ANSIBLE_VAULT_PASSWORD`, served by `.github/scripts/ansible-vault-pass.sh` which only echoes the environment variable | `--ask-vault-pass` | n/a | his password manager | `group_vars/all/vault.yml` cannot be decrypted: rebuild the file | `ansible-vault rekey` |
 | C6 | sudo (become) password on victus | The operator's account password on victus | Kept by the operator; in the inventory `ansible_become_password` reads the vault variable `vault_become_password_victus` (inside the encrypted `group_vars/all/vault.yml`); CI uses the GitHub Environment `victus` secret `ANSIBLE_BECOME_PASSWORD` via `.github/scripts/ansible-become-pass.sh` | either from the vault (then only `--ask-vault-pass` is needed) or typed at `--ask-become-pass` | n/a | his password manager | reset the account password on the host | change the account password and update the vault/Environment secret |
 | C7 | MAC address of the VM | The operator generates (WP5 step 1) | the vault key `vault_victus_vm_mac` or a local variables file outside the repository | Ansible variable `victus_vm_mac` | n/a | the same file | regenerate and change the router reservation | n/a |
@@ -636,7 +636,7 @@ triggers an auto-apply (set `victus_vm_disk_provision` false there).
 
 1. Confirm the node files from PR #52 are on `main` (WP1 step 2). If they differ from section 3.2, STOP.
 2. **The operator creates the Tailscale auth key** (executor cannot): admin console, Settings, Keys: generate an auth key,
-   reusable OFF, ephemeral OFF, pre-approved ON, tag `tag:talos`, expiry 1 day. Then, on his Mac (the same recipe
+   reusable OFF, ephemeral OFF, pre-approved ON, no tag, expiry 1 day. Then, on his Mac (the same recipe
    as `talos/secrets/README.md` section 3): copy `talos/patches/tailscale.yaml`, add the auth key
    environment entry as done for `tailscale-mini02.sops.yaml` (open that sops file with `sops
    talos/secrets/tailscale-mini02.sops.yaml` to see the SHAPE; do not print the key), then
@@ -707,7 +707,7 @@ wait or cancels it (mini03 is not in `TALOS_NODES` yet). **STOP point.** Wait fo
    Expected: `version` shows `v1.14.2`; volumestatus lists `data`, `backups`, `staging` as `ready`
    (or the equivalent state), mounted at `/var/mnt/data`, `/var/mnt/backups`, `/var/mnt/staging`;
    extensions list `qemu-guest-agent` and `tailscale`; `health` OK. If volume status shows `staging` or `backups` missing: section 10 "disk selectors".
-8. Tailscale: in the admin console, confirm a new device `mini03` tagged `tag:talos` (no `-1` suffix; if it is `mini03-1`,
+8. Tailscale: in the admin console, confirm a new device `mini03` (untagged; no `-1` suffix; if it is `mini03-1`,
    a stale device exists: delete the old one and re-apply).
 9. Add `mini03=<mini03-short-name>` to `TALOS_NODES` (WP6 step 4).
 **Verification.** `kubectl get node mini03` is Ready. **Rollback.** WP12. **STOP point.** Report outputs without addresses.
@@ -977,7 +977,7 @@ reset (`talosctl reset`) and re-apply the config as in WP7.
 ## 9. Security
 
 - **Exposure.** The VM has no inbound exposure from the internet. It gets a LAN address (DHCP) and a tailnet
-  address (tagged `tag:talos`; the tailnet policy decides what may reach it; the deploy workflow's `tag:ci` may
+  address (untagged; the tailnet policy `hosts` alias mini03 decides what may reach it; the deploy workflow's `tag:ci` may
   reach ports 50000 and 6443 only [verified `docs/dr/talos-deploy.md`]).
 - **Authentication.** The Talos API uses mutual TLS with the client certificate in the talosconfig. There is no
   SSH on Talos. The Kubernetes API is reached over the cluster endpoint with certificates.

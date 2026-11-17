@@ -25,10 +25,15 @@ and on a manual run. It can never be triggered by a pull request (rule F of
 These live outside the repo. They are safe to do before the cutover: nothing
 uses them until a Talos node is on the tailnet.
 
-1. **Tailnet policy.** Add tag owners for `tag:ci` and `tag:talos` (you own
-   both). Add one grant: `tag:ci` may reach `tag:talos` on ports 50000 and 6443
-   only. Add no rule that lets `tag:ci` reach any other device. Tag both Talos
-   nodes `tag:talos` (the Tailscale extension config, plan 15-02).
+1. **Tailnet policy.** Add the tag owner for `tag:ci` (you own it). The Talos
+   nodes are untagged, so add `hosts` aliases `mini01`, `mini02` and `mini03`
+   (placeholder addresses `100.x.y.z` here; keep the real ones out of git) and
+   one grant: `tag:ci` may reach `mini01`, `mini02` and `mini03` on tcp:50000
+   and tcp:6443 only. The deploy jobs also need `tag:ci` to `mini04` and
+   `victus` on tcp:22. Narrow any allow-all grant to src `autogroup:member`,
+   `tag:k8s` and `tag:k8s-operator`, so `tag:ci` reaches nothing else.
+   Future improvement: tag the nodes `tag:talos` via the auth keys in
+   `talos/secrets`, then grant to that tag instead of the aliases.
 2. **CI identity.** Create a federated identity for GitHub OIDC (issuer
    GitHub, subject `repo:BrunoLoureirooo/homelab_gitops:environment:*`), scoped
    to the `auth_keys` write permission with tag `tag:ci`. Note the client id and

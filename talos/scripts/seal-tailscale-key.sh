@@ -6,7 +6,7 @@
 # The key is read from the terminal without echo (or from TS_AUTHKEY if you already hold it in
 # the environment), written only into a private temp file, encrypted with sops and removed. It is
 # never printed, logged or put in git in the clear. Create the key first in the Tailscale admin
-# console: single-use, pre-approved, tagged tag:talos, one-day expiry.
+# console: single-use, pre-approved, untagged (tag:talos is a possible future improvement), one-day expiry.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
