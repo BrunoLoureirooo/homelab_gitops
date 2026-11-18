@@ -236,6 +236,40 @@ Re-check in WP1 with `kubectl top nodes` and `kubectl top pods -A`; if mini01 me
 **How it connects.** Everything is in-cluster HTTP over the pod network. Grafana reaches Prometheus at `http://prometheus.monitoring.svc.cluster.local:9090`.
 Prometheus reaches Alertmanager at `alertmanager.monitoring.svc.cluster.local:9093`. Only Grafana is exposed (tailnet Ingress, `tls.hosts: [grafana]`). Prometheus and Alertmanager UIs are used by the operator through `kubectl port-forward` in his own terminal (read-only) or not at all.
 
+### 4.x Current placement: everything on mini03 (supersedes the mini01/mini02 text above)
+
+Decided by the operator on 2026-11-18: Prometheus, Alertmanager, Grafana, kube-state-metrics and the two tailnet proxy
+pods (`ts-grafana-*`, `ts-prometheus-*`) run on `mini03`. metrics-server and the node-exporter DaemonSet are unchanged.
+mini03 is tainted `node-role.homeserver/tier=mobile:NoSchedule`, so each Deployment selects
+`kubernetes.io/hostname: mini03` and tolerates that taint (same style as `talos/manifests/backup-replica/minio.yaml`).
+The proxies are pinned by the ProxyClass `observability` (`talos/manifests/tailscale-proxyclasses/observability.yaml`),
+set with the label `tailscale.com/proxy-class: observability` on the two Ingresses.
+
+**Fresh start, no data migration.** The three claims were renamed (`prometheus-data-mini03`, `grafana-data-mini03`,
+`alertmanager-data-mini03`) so the new Pods get new volumes on mini03 (local-path, `/var/mnt/data/local-path`, the
+provisioner's default for every node not listed). The old claims are no longer in git. The monitoring app does not
+prune (no `automated` block, and Prune is an opt-in checkbox of a manual sync), so the old claims and their `Retain`
+volumes on mini01 stay as orphans. Prometheus history, Alertmanager silences and Grafana's database (users, preferences,
+UI-created dashboards) are not carried over. The one UI-created dashboard that mattered, `adclgtz` ("Cluster Overview",
+shown by the mini04 kiosk), is provisioned from git (`dashboards/cluster-overview.json`).
+
+Provisioned dashboards cannot be saved from the UI (`allowUiUpdates: false`, `disableDeletion: true`): to change one,
+edit its JSON in git. All provisioned dashboards land in the General folder (`foldersFromFilesStructure: false`).
+
+**Orphan cleanup** (run by the operator after the new stack is verified and the old data is no longer wanted; every
+step is destructive and irreversible, `Retain` PVs keep the data on mini01 until the PV object is deleted AND its
+directory under `/var/mnt/data/local-path` on mini01 is removed):
+
+```
+kubectl -n monitoring delete pvc prometheus-data grafana-data alertmanager-data
+kubectl delete pv pvc-881668f9-5c70-4f51-b837-fefc778e7003 \
+                  pvc-01c6c478-3d75-4940-a4f3-a84917cc3676 \
+                  pvc-02d23d1f-8abb-4589-ac8c-69ad83508574 \
+                  pvc-2358a25e-9e71-4f64-88de-2d4d5272bd45   # stale Released grafana-data from an earlier sync
+```
+
+Deleting a `Retain` PV does not delete the directory; remove the four `pvc-*_monitoring_*` directories on mini01 by hand.
+
 ## 5. Decisions for the operator
 
 The executor STOPs at any WP that depends on an unanswered decision.

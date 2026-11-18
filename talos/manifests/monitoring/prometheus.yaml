@@ -1,9 +1,11 @@
-# Prometheus on mini02 (plan docs/plans/monitoring.md 4.3, decision D5 default). mini02 is cordoned, so the
-# Pod tolerates the cordon taint and is pinned to the node. The TSDB is on a topolvm-fast (local-path) volume;
+# Prometheus on mini03 (plan docs/plans/monitoring.md 4.3; moved off mini01 together with the rest of the
+# observability stack, see "Placement" there). mini03 is tainted tier=mobile:NoSchedule, so the Pod selects
+# the node and tolerates the taint (same style as talos/manifests/backup-replica/minio.yaml). The Pod also
+# keeps the cordon toleration. The TSDB is on a topolvm-fast (local-path) volume;
 # local-path does not enforce the size, so the cap is the --storage.tsdb.retention.size flag.
 apiVersion: v1
 kind: PersistentVolumeClaim
-metadata: {name: prometheus-data, namespace: monitoring}
+metadata: {name: prometheus-data-mini03, namespace: monitoring}
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: topolvm-fast
@@ -28,9 +30,10 @@ spec:
     spec:
       serviceAccountName: prometheus
       priorityClassName: hs-critical
-      nodeSelector: {kubernetes.io/hostname: mini01}
+      nodeSelector: {kubernetes.io/hostname: mini03}
       tolerations:
         - {key: node.kubernetes.io/unschedulable, operator: Exists, effect: NoSchedule}
+        - {key: node-role.homeserver/tier, operator: Equal, value: mobile, effect: NoSchedule}
       securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: prometheus
@@ -61,11 +64,12 @@ spec:
       volumes:
         - {name: config, configMap: {name: prometheus-config}}
         - {name: rules, configMap: {name: prometheus-rules}}
-        - {name: data, persistentVolumeClaim: {claimName: prometheus-data}}
+        - {name: data, persistentVolumeClaim: {claimName: prometheus-data-mini03}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
-metadata: {name: prometheus, namespace: monitoring, labels: {app.kubernetes.io/name: prometheus}}
+# proxy-class: pins the tailnet proxy pod to mini03 next to the backend (talos/manifests/tailscale-proxyclasses/observability.yaml)
+metadata: {name: prometheus, namespace: monitoring, labels: {app.kubernetes.io/name: prometheus, tailscale.com/proxy-class: observability}}
 spec:
   ingressClassName: tailscale
   rules:

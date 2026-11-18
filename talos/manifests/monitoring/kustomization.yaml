@@ -30,3 +30,5 @@ configMapGenerator:
     files: [dashboards/argocd.json]
   - name: grafana-dash-cnpg
     files: [dashboards/cloudnativepg.json]
+  - name: grafana-dash-cluster-overview
+    files: [dashboards/cluster-overview.json]

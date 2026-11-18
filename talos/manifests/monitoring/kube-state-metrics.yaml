@@ -16,7 +16,9 @@ spec:
     spec:
       serviceAccountName: kube-state-metrics
       priorityClassName: hs-interactive
-      nodeSelector: {kubernetes.io/hostname: mini01}
+      nodeSelector: {kubernetes.io/hostname: mini03}
+      tolerations:
+        - {key: node-role.homeserver/tier, operator: Equal, value: mobile, effect: NoSchedule}
       securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: kube-state-metrics
