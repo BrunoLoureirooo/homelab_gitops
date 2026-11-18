@@ -1,4 +1,4 @@
-# Alertmanager on mini02 next to Prometheus (plan 4.7). Alerts go to Discord (D1) and the Watchdog heartbeat to
+# Alertmanager on mini03 next to Prometheus (plan 4.7; tolerates the mini03 tier=mobile taint). Alerts go to Discord (D1) and the Watchdog heartbeat to
 # healthchecks.io (D4); both URLs are files of the sealed Secret monitoring/alertmanager-notifiers, mounted at
 # /etc/alertmanager/secrets. Until that Secret exists the pod stays in ContainerCreating. Seal it from the repo root:
 #   read -rs DISCORD_URL; read -rs HC_URL
@@ -11,7 +11,7 @@
 # then add `- alertmanager-notifiers.yaml` to talos/sealed-secrets/kustomization.yaml.
 apiVersion: v1
 kind: PersistentVolumeClaim
-metadata: {name: alertmanager-data, namespace: monitoring}
+metadata: {name: alertmanager-data-mini03, namespace: monitoring}
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: topolvm-fast
@@ -36,8 +36,10 @@ spec:
     spec:
       priorityClassName: hs-critical
       automountServiceAccountToken: false
-      nodeSelector: {kubernetes.io/hostname: mini01}
-      tolerations: [{key: node.kubernetes.io/unschedulable, operator: Exists, effect: NoSchedule}]
+      nodeSelector: {kubernetes.io/hostname: mini03}
+      tolerations:
+        - {key: node.kubernetes.io/unschedulable, operator: Exists, effect: NoSchedule}
+        - {key: node-role.homeserver/tier, operator: Equal, value: mobile, effect: NoSchedule}
       securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: alertmanager
@@ -59,4 +61,4 @@ spec:
         - {name: config, configMap: {name: alertmanager-config}}
         # defaultMode 288 == 0440 octal (yamllint octal-values forbids the literal)
         - {name: notifiers, secret: {secretName: alertmanager-notifiers, defaultMode: 288}}
-        - {name: data, persistentVolumeClaim: {claimName: alertmanager-data}}
+        - {name: data, persistentVolumeClaim: {claimName: alertmanager-data-mini03}}

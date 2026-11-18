@@ -1,4 +1,4 @@
-# Grafana on mini01, tailnet only through the Tailscale operator (plan 5.1). Data source and dashboards are
+# Grafana on mini03, tailnet only through the Tailscale operator (plan 5.1). Data source and dashboards are
 # provisioned from git, so the only state in the volume is users and preferences. The admin password comes from the
 # sealed Secret grafana-secrets (talos/sealed-secrets/grafana-secrets.yaml); it is applied only when the database
 # is first created. Alerting lives in Prometheus/Alertmanager, so Grafana's own alerting is switched off.
@@ -6,7 +6,7 @@
 # registers as `grafana-1` (same note as talos/manifests/jellyfin/ingress.yaml).
 apiVersion: v1
 kind: PersistentVolumeClaim
-metadata: {name: grafana-data, namespace: monitoring}
+metadata: {name: grafana-data-mini03, namespace: monitoring}
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: topolvm-fast
@@ -31,7 +31,9 @@ spec:
     spec:
       priorityClassName: hs-interactive
       automountServiceAccountToken: false
-      nodeSelector: {kubernetes.io/hostname: mini01}
+      nodeSelector: {kubernetes.io/hostname: mini03}
+      tolerations:
+        - {key: node-role.homeserver/tier, operator: Equal, value: mobile, effect: NoSchedule}
       securityContext: {runAsNonRoot: true, runAsUser: 472, runAsGroup: 472, fsGroup: 472, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: grafana
@@ -59,7 +61,7 @@ spec:
             - {name: dashboard-provider, mountPath: /etc/grafana/provisioning/dashboards}
             - {name: dashboards, mountPath: /var/lib/grafana-dashboards, readOnly: true}
       volumes:
-        - {name: data, persistentVolumeClaim: {claimName: grafana-data}}
+        - {name: data, persistentVolumeClaim: {claimName: grafana-data-mini03}}
         - {name: tmp, emptyDir: {sizeLimit: 100Mi}}
         - {name: datasources, configMap: {name: grafana-datasources}}
         - {name: dashboard-provider, configMap: {name: grafana-dashboard-provider}}
@@ -70,10 +72,12 @@ spec:
               - configMap: {name: grafana-dash-kube-state}
               - configMap: {name: grafana-dash-argocd}
               - configMap: {name: grafana-dash-cnpg}
+              - configMap: {name: grafana-dash-cluster-overview}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
-metadata: {name: grafana, namespace: monitoring, labels: {app.kubernetes.io/name: grafana}}
+# proxy-class: pins the tailnet proxy pod to mini03 next to the backend (talos/manifests/tailscale-proxyclasses/observability.yaml)
+metadata: {name: grafana, namespace: monitoring, labels: {app.kubernetes.io/name: grafana, tailscale.com/proxy-class: observability}}
 spec:
   ingressClassName: tailscale
   rules:

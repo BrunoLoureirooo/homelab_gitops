@@ -1,0 +1,28 @@
+# ProxyClass for the tailnet proxies of Grafana and Prometheus (Ingress label
+# `tailscale.com/proxy-class: observability`): run the proxy pods on mini03, next to the
+# backends, which moved there together with the rest of the observability stack.
+#
+# mini03 is tainted tier=mobile:NoSchedule, so the proxy pod must tolerate it, like the
+# backup-replica pods do. Changing the class on an Ingress rolls the proxy StatefulSet in place:
+# the state Secret is keyed by the StatefulSet name, so the tailnet device keeps its name.
+#
+# The MTU setting is copied from the `default` ProxyClass (argocd/manifests/tailscale-operator/
+# proxyclass.yaml, see its header for the reason). If that value changes, change it here too.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: observability
+spec:
+  statefulSet:
+    pod:
+      nodeSelector:
+        kubernetes.io/hostname: mini03
+      tolerations:
+        - key: node-role.homeserver/tier
+          operator: Equal
+          value: mobile
+          effect: NoSchedule
+      tailscaleContainer:
+        env:
+          - name: TS_DEBUG_MTU
+            value: "1150"
