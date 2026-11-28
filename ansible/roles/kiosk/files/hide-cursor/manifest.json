@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Kiosk hide cursor",
+  "version": "1.0",
+  "description": "Hides the mouse cursor on every page (cage 0.2.0 has no option for it).",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "css": ["hide-cursor.css"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}

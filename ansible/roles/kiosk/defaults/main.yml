@@ -20,6 +20,9 @@ kiosk_restart_sec: 5
 # Dashboard form: https://grafana.<tailnet-name>.ts.net/d/<uid>/<slug>?kiosk&refresh=1m&theme=dark
 kiosk_url: "https://grafana.<tailnet-name>.ts.net/?kiosk"
 
+# Unpacked extension that hides the mouse cursor (files/hide-cursor).
+kiosk_extension_dir: /usr/local/share/kiosk-hide-cursor
+
 kiosk_packages:
   - cage
   - chromium
@@ -35,3 +38,5 @@ kiosk_chromium_flags:
   - --disable-infobars
   - --password-store=basic
   - --check-for-update-interval=31536000
+  - --hide-scrollbars
+  - --load-extension={{ kiosk_extension_dir }}
