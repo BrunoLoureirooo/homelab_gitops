@@ -17,7 +17,7 @@ configMapGenerator:
   - name: prometheus-rules
     files: [rules-core.yml]
   - name: alertmanager-config
-    files: [alertmanager.yml]
+    files: [alertmanager.yml, alertmanager.tmpl]
   - name: grafana-datasources
     files: [datasources.yml=grafana-datasources.yml]
   - name: grafana-dashboard-provider

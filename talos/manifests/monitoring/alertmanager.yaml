@@ -55,6 +55,7 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           volumeMounts:
             - {name: config, mountPath: /etc/alertmanager/alertmanager.yml, subPath: alertmanager.yml}
+            - {name: config, mountPath: /etc/alertmanager/alertmanager.tmpl, subPath: alertmanager.tmpl}
             - {name: notifiers, mountPath: /etc/alertmanager/secrets, readOnly: true}
             - {name: data, mountPath: /alertmanager}
       volumes:
