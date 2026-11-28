@@ -1,0 +1,62 @@
+{{/* Discord notification templates (see alertmanager.yml). Every define below is pure presentation over the stock template data. */}}
+
+{{/* Human service name for ONE alert, first hit wins:
+     service, namespace/container, namespace/(deployment|statefulset|daemonset), job, instance host (port stripped). */}}
+{{ define "discord.service" -}}
+{{- $w := or .Labels.deployment .Labels.statefulset .Labels.daemonset -}}
+{{- if .Labels.service }}{{ .Labels.service }}
+{{- else if and .Labels.namespace .Labels.container }}{{ .Labels.namespace }}/{{ .Labels.container }}
+{{- else if and .Labels.namespace $w }}{{ .Labels.namespace }}/{{ $w }}
+{{- else if .Labels.job }}{{ .Labels.job }}
+{{- else }}{{ reReplaceAll ":[0-9]+$" "" .Labels.instance }}
+{{- end }}
+{{- end }}
+
+{{/* Stable incident ID: first 6 hex chars of the first alert's fingerprint (identical in the firing and resolved message). */}}
+{{ define "discord.id" -}}
+{{- slice (index .Alerts 0).Fingerprint 0 6 -}}
+{{- end }}
+
+{{ define "discord.title" -}}
+{{- if eq .Status "resolved" -}}
+✅ Incident #{{ template "discord.id" . }} resolved — {{ template "discord.service" (index .Alerts 0) }}
+{{- else -}}
+{{- $a := index .Alerts 0 -}}
+{{- if eq .CommonLabels.severity "critical" }}🔴{{ else if eq .CommonLabels.severity "warning" }}🟠{{ else }}🟡{{ end }} Incident #{{ template "discord.id" . }} — {{ template "discord.service" $a }}
+{{- if match "(Down|Unreachable|Unavailable|NotOnline)$" $a.Labels.alertname }} down: {{ else }} — {{ end }}{{ $a.Labels.alertname }}
+{{- end -}}
+{{- end }}
+
+{{/* One alert: summary, description, then only the labels that exist. */}}
+{{ define "discord.alert" -}}
+{{ .Annotations.summary }}
+{{- with .Annotations.description }}
+{{ . }}{{ end }}
+{{- with .Labels.severity }}
+**Severity:** {{ . }}{{ end }}
+{{- with .Labels.namespace }}
+**Namespace:** {{ . }}{{ end }}
+**Workload:** {{ template "discord.service" . }}
+{{- with .Labels.pod }}
+**Pod:** {{ . }}{{ end }}
+{{- with .Labels.container }}
+**Container:** {{ . }}{{ end }}
+{{- with or .Labels.node (and (not .Labels.pod) .Labels.job .Labels.instance) }}
+**Node:** {{ reReplaceAll ":[0-9]+$" "" . }}{{ end }}
+**Started:** {{ .StartsAt.UTC.Format "2006-01-02 15:04 UTC" }}
+{{- end }}
+
+{{/* Firing body only (resolved has no body). Max 6 alert blocks keeps well under Discord's 4096-char limit. */}}
+{{ define "discord.message" -}}
+{{- if eq .Status "firing" -}}
+{{- range $i, $a := .Alerts.Firing -}}
+{{- if lt $i 6 }}{{ if $i }}
+
+{{ end }}{{ template "discord.alert" $a }}{{ end -}}
+{{- end -}}
+{{- if gt (len .Alerts.Firing) 6 }}
+
+…and {{ len (slice .Alerts.Firing 6) }} more
+{{- end -}}
+{{- end -}}
+{{- end }}

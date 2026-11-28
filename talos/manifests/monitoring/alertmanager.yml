@@ -5,9 +5,11 @@
 # Seal it with the command in the header of alertmanager.yaml and list it in talos/sealed-secrets/kustomization.yaml.
 global:
   resolve_timeout: 5m
+templates:
+  - /etc/alertmanager/alertmanager.tmpl
 route:
   receiver: discord
-  group_by: [alertname, instance]
+  group_by: [alertname, namespace, service, instance]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 12h
@@ -28,6 +30,9 @@ receivers:
     discord_configs:
       - webhook_url_file: /etc/alertmanager/secrets/discord-webhook-url
         send_resolved: true
+        # Title and body in alertmanager.tmpl; the incident ID is the first 6 chars of the first alert's fingerprint.
+        title: '{{ template "discord.title" . }}'
+        message: '{{ template "discord.message" . }}'
   - name: healthchecks
     webhook_configs:
       - url_file: /etc/alertmanager/secrets/healthchecks-ping-url
