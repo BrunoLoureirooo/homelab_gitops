@@ -52,10 +52,12 @@ spec:
             # Grafana 13 preinstalls/updates bundled plugins at startup; on the read-only root filesystem the update
             # unloads the bundled prometheus datasource plugin and then fails to replace it, so every panel shows no data.
             - {name: GF_PLUGINS_PREINSTALL_DISABLED, value: "true"}
+            # Soft memory target ~88% of the 1Gi limit so the Go GC backs off before the kernel OOM-kills the pod.
+            - {name: GOMEMLIMIT, value: 900MiB}
           ports: [{name: http, containerPort: 3000}]
           readinessProbe: {httpGet: {path: /api/health, port: http}, periodSeconds: 10}
           livenessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 30, periodSeconds: 20}
-          resources: {requests: {cpu: 50m, memory: 256Mi}, limits: {cpu: 500m, memory: 768Mi}}
+          resources: {requests: {cpu: 50m, memory: 256Mi}, limits: {cpu: 500m, memory: 1Gi}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
           volumeMounts:
             - {name: data, mountPath: /var/lib/grafana}
